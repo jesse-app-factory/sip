@@ -1,0 +1,80 @@
+name: Agent task
+description: An implementation task for an autonomous coding agent.
+title: "[TASK-000] "
+labels: ["type:implementation", "agent:planned"]
+body:
+  - type: input
+    id: task-id
+    attributes:
+      label: Task ID
+      description: Stable identifier from tasks.json. Never reuse or renumber.
+      placeholder: TASK-001
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What must be built. Reference the governing documents in docs/.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: One objectively verifiable criterion per line.
+      placeholder: |
+        - `GET /health` responds with HTTP 200
+        - `npm test` exits with code 0
+    validations:
+      required: true
+
+  - type: input
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Comma-separated task IDs that must be DONE first. Leave empty if none.
+      placeholder: TASK-001, TASK-002
+
+  - type: textarea
+    id: allowed-paths
+    attributes:
+      label: Allowed paths
+      description: Glob patterns the agent may modify. One per line.
+      placeholder: |
+        src/**
+        tests/**
+    validations:
+      required: true
+
+  - type: textarea
+    id: forbidden-paths
+    attributes:
+      label: Forbidden paths
+      description: Glob patterns the agent must not modify. One per line.
+      placeholder: |
+        .github/workflows/**
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Estimated complexity
+      options:
+        - small
+        - medium
+        - large
+    validations:
+      required: true
