@@ -22,7 +22,7 @@ find.
 shape of what is written and read, the per-day keying, and the fallback when
 stored data is absent or malformed. **No test calls AsyncStorage.**
 
-**Notification tests.** Run against the fake scheduler and assert what *would*
+**Notification tests.** Run against the fake scheduler and assert what _would_
 have been scheduled: that a reminder was scheduled at all, when, that logging
 cancels and reschedules, that a met goal schedules nothing, and that quiet hours
 push the fire time outside the window. **No test schedules a real notification or

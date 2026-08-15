@@ -15016,6 +15016,12 @@ function selectNextTask(input) {
       reason: "The task list is empty; nothing can be dispatched."
     };
   }
+  if (input.autoStart === false) {
+    return {
+      decision: "NOOP_AUTOSTART_DISABLED",
+      reason: "policy.autoStart is false in project-manifest.json on the default branch; the project is provisioned but not started. Set it to true, or re-provision with --force-dispatch, to begin."
+    };
+  }
   const active = input.tasks.filter((task) => ACTIVE_STATUSES.has(task.status));
   if (active.length > 0) {
     const [first] = [...active].sort(byPriorityThenSequence);
@@ -15139,7 +15145,8 @@ async function runDispatch(options) {
   const decision = selectNextTask({
     tasks,
     openPullRequests,
-    projectIsValid: options.projectIsValid ?? true
+    projectIsValid: options.projectIsValid ?? true,
+    ...options.autoStart === void 0 ? {} : { autoStart: options.autoStart }
   });
   log(`decision=${decision.decision} task=${decision.taskId ?? "none"} \u2014 ${decision.reason}`);
   if (decision.decision === "COMPLETE_PROJECT") {
@@ -15210,6 +15217,15 @@ function readTasks(dir) {
     return { error: `.factory/tasks.json is not valid JSON: ${error51.message}` };
   }
 }
+function readAutoStart(dir) {
+  try {
+    const manifest = JSON.parse(readFileSync(path.join(dir, "project-manifest.json"), "utf8"));
+    const value = manifest.policy?.autoStart;
+    return typeof value === "boolean" ? value : void 0;
+  } catch {
+    return void 0;
+  }
+}
 function publishSummary(decision, correlationId) {
   const summaryPath = process3.env.GITHUB_STEP_SUMMARY;
   if (!summaryPath) return;
@@ -15245,10 +15261,12 @@ async function main(cwd = process3.cwd()) {
     owner: env.owner,
     repo: env.repo
   });
+  const autoStart = readAutoStart(cwd);
   const { decision } = await runDispatch({
     client,
     tasks: "tasks" in loaded ? loaded.tasks : [],
     projectIsValid: !("error" in loaded),
+    ...autoStart === void 0 ? {} : { autoStart },
     correlationId: env.correlationId,
     defaultBranch: env.defaultBranch,
     onLog: (message) => process3.stdout.write(`${message}

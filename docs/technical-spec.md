@@ -2,15 +2,15 @@
 
 ## Stack
 
-| Concern       | Choice                                    |
-| ------------- | ----------------------------------------- |
-| Framework     | Expo (React Native)                       |
-| Language      | TypeScript, `strict: true`                |
+| Concern       | Choice                                      |
+| ------------- | ------------------------------------------- |
+| Framework     | Expo (React Native)                         |
+| Language      | TypeScript, `strict: true`                  |
 | Storage       | `@react-native-async-storage/async-storage` |
-| Animation     | `react-native-reanimated`                 |
-| Vector art    | `react-native-svg`                        |
-| Notifications | `expo-notifications`, local only          |
-| Tests         | Jest with `@testing-library/react-native` |
+| Animation     | `react-native-reanimated`                   |
+| Vector art    | `react-native-svg`                          |
+| Notifications | `expo-notifications`, local only            |
+| Tests         | Jest with `@testing-library/react-native`   |
 
 Expo rather than bare React Native because the app needs no custom native code,
 and Expo Go lets the app run on a real phone by scanning a QR code — no Xcode, no

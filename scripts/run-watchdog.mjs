@@ -14571,6 +14571,22 @@ var notificationsSchema = external_exports.object({
   events: external_exports.array(external_exports.string().min(1)).optional()
 });
 var policySchema = external_exports.object({
+  /**
+   * Whether the dispatcher may start work at all.
+   *
+   * Optional, defaulting to true, so a repository provisioned before this
+   * existed keeps running — an absent flag must never read as "paused" and
+   * silently stop a project nobody meant to stop.
+   *
+   * Set false by `factory provision --no-dispatch`. It is the only durable way
+   * to say "provisioned but not started": every issue is created carrying
+   * `agent:planned`, which the dispatcher reads as a task it may take, so
+   * without this a fully provisioned project is a started one.
+   *
+   * It is also the per-project pause switch, editable by hand on the default
+   * branch, and it survives everything a workflow setting does not.
+   */
+  autoStart: external_exports.boolean().optional(),
   autoMerge: external_exports.object({
     enabled: external_exports.boolean(),
     method: external_exports.enum(MERGE_METHODS)

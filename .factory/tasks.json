@@ -213,12 +213,7 @@
       "No code in this task performs a network request",
       "`npm test` covers each criterion above, and lint, typecheck and build exit 0"
     ],
-    "allowedPaths": [
-      "src/notifications/**",
-      "src/screens/**",
-      "src/storage/**",
-      "__tests__/**"
-    ],
+    "allowedPaths": ["src/notifications/**", "src/screens/**", "src/storage/**", "__tests__/**"],
     "forbiddenPaths": [
       ".github/workflows/**",
       "scripts/**",

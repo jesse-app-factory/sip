@@ -6,20 +6,20 @@ arrives.
 
 ## The chain
 
-| Task     | Builds                              | Depends on         |
-| -------- | ----------------------------------- | ------------------ |
-| TASK-001 | Expo skeleton, all dependencies     | —                  |
-| TASK-002 | Pure hydration logic                | 001                |
-| TASK-003 | On-device persistence               | 002                |
-| TASK-004 | Goal setting                        | 003                |
-| TASK-005 | Logging, undo, today's total        | 004                |
-| TASK-006 | The blob, presentational            | 001                |
-| TASK-007 | Animation                           | 005, 006           |
-| TASK-008 | Local reminders                     | 005                |
-| TASK-009 | Settings: interval, quiet hours     | 008                |
-| TASK-010 | History and streak                  | 003                |
-| TASK-011 | First-run onboarding                | 004, 009           |
-| TASK-012 | README                              | 007, 010, 011      |
+| Task     | Builds                          | Depends on    |
+| -------- | ------------------------------- | ------------- |
+| TASK-001 | Expo skeleton, all dependencies | —             |
+| TASK-002 | Pure hydration logic            | 001           |
+| TASK-003 | On-device persistence           | 002           |
+| TASK-004 | Goal setting                    | 003           |
+| TASK-005 | Logging, undo, today's total    | 004           |
+| TASK-006 | The blob, presentational        | 001           |
+| TASK-007 | Animation                       | 005, 006      |
+| TASK-008 | Local reminders                 | 005           |
+| TASK-009 | Settings: interval, quiet hours | 008           |
+| TASK-010 | History and streak              | 003           |
+| TASK-011 | First-run onboarding            | 004, 009      |
+| TASK-012 | README                          | 007, 010, 011 |
 
 TASK-006 and TASK-010 depend on early tasks rather than on the chain, so they can
 be built at several points in the sequence. That is intentional — it exercises
