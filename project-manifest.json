@@ -28,7 +28,7 @@
     }
   },
   "policy": {
-    "autoStart": true,
+    "autoStart": false,
     "autoMerge": {
       "enabled": true,
       "method": "squash"
