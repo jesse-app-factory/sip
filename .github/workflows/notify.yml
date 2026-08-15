@@ -1,0 +1,78 @@
+# Tells the project owner when something happened (plan doc §17, Step MVP-10.1).
+#
+# Triggered by the label change itself rather than called from the five places
+# that set labels. Those five — the implement outcome, the fix recorder, the
+# reviewer, the watchdog's repairs, the dispatcher's claim — would each have
+# been a place to get deduplication and redaction right, and each a place where
+# a webhook failure could interfere with a state transition.
+#
+# Reading the label instead means this workflow only ever reads state. It holds
+# no permission that could change a task: no `actions`, no `pull-requests`, and
+# `issues: write` solely to record that the owner was told. §17's "provider
+# failure must not corrupt project state" is therefore a property of the
+# permissions, not a promise about the code.
+name: Notify
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue to report on
+        required: true
+      label:
+        description: Label to report as though it had just been added
+        required: true
+
+permissions:
+  contents: read
+  # Only to write the dedupe marker comment. Nothing here may relabel, close,
+  # or dispatch anything.
+  issues: write
+
+# Keyed per issue: two different tasks reaching a reportable state at the same
+# moment are two separate pieces of news, and serialising them would drop one.
+#
+# cancel-in-progress: false — a cancelled run could send the message and die
+# before recording that it did, which produces the duplicate this is built to
+# avoid.
+concurrency:
+  group: notify-${{ github.repository }}-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    name: Report a state change
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Cheap guard so the common case — a priority or type label — costs nothing.
+    # The script checks properly; this only avoids starting a runner for labels
+    # that can never produce an event.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.event.label.name, 'agent:')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      # The issue body and title come from the event payload rather than a
+      # fresh read: they are untrusted content either way, and the script
+      # treats them as data. Comments are read through the API because the
+      # markers that say *why* a label was set are only there.
+      - name: Send the notification
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_STATE: ${{ github.event.issue.state }}
+          ADDED_LABEL: ${{ github.event.label.name || inputs.label }}
+        run: node scripts/send-notification.mjs

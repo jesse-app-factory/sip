@@ -1,0 +1,61 @@
+# Selects the next unblocked task and starts exactly one implementation run.
+#
+# cancel-in-progress: false — dispatch mutates issue labels to claim a task.
+# Cancelling mid-run could leave an issue labelled agent:running with no run
+# behind it, which the watchdog would then have to repair.
+#
+# This concurrency group is the mutex. GitHub offers no compare-and-set on
+# labels, so serialising the workflow is what prevents two dispatchers claiming
+# two tasks; select-next-task.mjs re-reads issue state once the lock is held.
+#
+# GITHUB_TOKEN is sufficient here: workflow_dispatch and repository_dispatch are
+# the two events GITHUB_TOKEN is permitted to trigger. (Agent *pushes* still
+# require a GitHub App token — see agent-implement.yml.)
+name: Agent Dispatch
+
+on:
+  workflow_dispatch:
+  issues:
+    types: [labeled, unlabeled, closed, reopened]
+  pull_request:
+    types: [closed]
+  workflow_run:
+    workflows: ["CI", "Agent Review", "Agent Fix"]
+    types: [completed]
+  # Fallback so a lost event cannot stall the project indefinitely.
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+  # Read-only: the dispatcher lists open pull requests to avoid starting new
+  # work while a change is still in flight. It never writes to one.
+  pull-requests: read
+
+concurrency:
+  group: agent-dispatch-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Select next task
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      # Exits 0 for every valid decision, including no-ops: a no-op is a normal
+      # outcome, and failing on one would make an idle project look broken.
+      - name: Select and dispatch next task
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node scripts/select-next-task.mjs

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "Sip",
+  "slug": "sip",
+  "description": "A cute water-drinking companion for iOS and Android. Set a daily hydration goal, log glasses as you drink them, and watch a blob character grow and cheer as you approach it. Reminds you locally when you have not had a drink for a while, with no account and no server.",
+  "visibility": "private",
+  "defaultBranch": "main",
+  "autoMerge": true,
+  "autoDeployStaging": false,
+  "notificationChannels": ["discord"]
+}

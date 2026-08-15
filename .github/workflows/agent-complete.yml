@@ -1,0 +1,200 @@
+# Decides whether the project is finished, then releases it (plan doc §18).
+#
+# Triggered by the dispatcher when every task carries agent:done, but that
+# decision is a trigger and never evidence: it is derived from labels alone, and
+# labels are written by workflows that can die mid-update. Everything below is
+# re-derived from GitHub and from a build that actually runs here.
+#
+# Two conditions cannot be read from an API at all. Whether the project builds
+# from a clean checkout is answered by building it, and whether it does what was
+# asked for is answered by reading docs/acceptance-criteria.md against the
+# finished code. Both happen in this job.
+#
+# cancel-in-progress: false — this creates tags and releases. A cancelled run
+# between the tag and the release leaves a resumable state, and the release step
+# knows how to resume; a cancelled run *during* either leaves less.
+name: Agent Complete
+
+on:
+  workflow_dispatch:
+    inputs:
+      correlation_id:
+        description: Ties this run to the dispatch that started it
+        required: false
+
+permissions:
+  # Tags and releases.
+  contents: write
+  # Recording the outcome on the task issues.
+  issues: write
+  pull-requests: read
+  checks: read
+  # The Claude action mints an OIDC token before it will start. Omitting this
+  # made the acceptance judge fail four seconds in with "Unable to get
+  # ACTIONS_ID_TOKEN_REQUEST_URL" — before spending anything, which is the only
+  # reason it cost nothing to discover.
+  id-token: write
+  actions: read
+
+concurrency:
+  group: agent-complete-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  complete:
+    name: Evaluate completion
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # fetch-depth: 0 — the acceptance brief lists the tree at the final
+      # commit, and a shallow clone does not have it.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      # The same detection CI does. Without it the verification build runs
+      # against no dependencies at all, and fails for every project that has
+      # any — which a live run demonstrated by failing on `@types/node`.
+      - name: Detect package manager
+        id: detect
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f package-lock.json ]; then
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          elif [ -f yarn.lock ]; then
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No lockfile found; cannot verify the build reproducibly."
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        if: steps.detect.outputs.manager == 'pnpm'
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: ${{ steps.detect.outputs.manager }}
+
+      - name: Record the commit under evaluation
+        id: final
+        run: echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Install dependencies
+        run: |
+          case "${{ steps.detect.outputs.manager }}" in
+            pnpm) pnpm install --frozen-lockfile ;;
+            npm)  npm ci ;;
+            yarn) yarn install --frozen-lockfile ;;
+          esac
+
+      # The clean-checkout build §18 asks for. Deliberately the same script CI
+      # runs, against the same commit, in a tree nothing has touched — a green
+      # CI badge can belong to a different commit; this cannot.
+      - name: Verify the project builds and passes its tests
+        id: verify
+        continue-on-error: true
+        run: node scripts/run-ci-checks.mjs
+
+      - name: Brief the acceptance judge
+        id: brief
+        env:
+          FINAL_SHA: ${{ steps.final.outputs.sha }}
+          # So the brief can say what was already measured. The judge has no
+          # shell, and without this it marks every "exits with code 0" criterion
+          # unclear and refuses — correctly, for a reason that is the brief's
+          # fault rather than the project's.
+          VERIFICATION_BUILD_OUTCOME: ${{ steps.verify.outcome }}
+        run: node scripts/build-acceptance-context.mjs
+
+      # The only check in this system that judges the product rather than the
+      # process. It is shown the criteria, the tasks and the file list — and no
+      # agent's account of its own work, because it exists to catch the case
+      # where every one of those already said yes.
+      - name: Judge the acceptance criteria
+        id: judge
+        if: steps.brief.outcome == 'success'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: "github-actions[bot],claude,autonomous-app-factory"
+          claude_args: >-
+            --model ${{ vars.CLAUDE_MODEL || 'claude-opus-5' }}
+            --max-turns ${{ vars.MAX_JUDGE_TURNS || '40' }}
+            --allowedTools "Read,Write,Glob,Grep"
+          prompt: |
+            Read `.agent/acceptance-context.md` and judge the finished project
+            exactly as it instructs. Write `.agent/acceptance-verdict.json` in
+            the shape given at the end of that file.
+
+            Read the repository to check each criterion yourself. Do not take a
+            task's word for it, and do not approve around a gap: a criterion you
+            cannot verify is `unclear`, not `met`.
+
+      # Judges every §18 condition, including the two produced above. Exits
+      # non-zero when the project is not finished, which is what stops the
+      # release steps — they are gated on this rather than deciding for
+      # themselves, so there is one place that can be wrong instead of three.
+      - name: Evaluate completion
+        id: evaluate
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          VERIFICATION_BUILD_OUTCOME: ${{ steps.verify.outcome }}
+          VERIFICATION_BUILD_SHA: ${{ steps.final.outputs.sha }}
+        run: node scripts/evaluate-completion.mjs
+
+      - name: Tag, release and announce
+        if: steps.evaluate.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: node scripts/create-release.mjs
+
+      # Runs whatever happened, so a project that is not finished says why on
+      # the issues rather than only in a log nobody opens.
+      - name: Record the outcome
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          COMPLETE: ${{ steps.evaluate.outcome == 'success' }}
+          CORRELATION_ID: ${{ inputs.correlation_id }}
+        run: |
+          if [ ! -f .agent/completion-report.json ]; then
+            echo "::warning::No completion report was produced."
+            exit 0
+          fi
+
+          {
+            if [ "${COMPLETE}" = "true" ]; then
+              echo "## Project complete"
+              echo
+              echo "Released. The completion report is attached to the release."
+            else
+              echo "## Completion was evaluated and refused"
+              echo
+              node -e "const r=require('./.agent/completion-report.json');r.refusals.forEach(x=>console.log('- **'+x.reason+'** — '+x.detail))"
+            fi
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} (correlation \`${CORRELATION_ID}\`)"
+          } > .agent/completion-comment.md
+
+          cat .agent/completion-comment.md
+
+      - name: Upload the completion report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: completion-${{ github.run_id }}
+          path: .agent/
+          include-hidden-files: true
+          retention-days: 30

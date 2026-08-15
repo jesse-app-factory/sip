@@ -1,0 +1,122 @@
+# Validates every pull request and every push to the default branch, and
+# publishes the machine-readable result the review and fix workflows consume.
+#
+# cancel-in-progress: true — CI is read-only and reruns cleanly, so superseding
+# a run for an outdated commit is safe and saves runner minutes.
+#
+# FORK SAFETY: triggers on pull_request, never pull_request_target, and this
+# job requires no secrets. An untrusted fork pull request therefore cannot
+# reach any credential.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+  # Auto-merge is performed with GITHUB_TOKEN, and GitHub does not start
+  # workflows for events that token creates — so the merge commit on the
+  # default branch never gets a push-triggered run. The merge workflow asks
+  # for one explicitly, which is what makes "the default branch is green"
+  # answerable at all.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Project checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Detect package manager
+        id: detect
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "manager=pnpm" >> "$GITHUB_OUTPUT"
+          elif [ -f package-lock.json ]; then
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+          elif [ -f yarn.lock ]; then
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::No lockfile found (expected pnpm-lock.yaml, package-lock.json, or yarn.lock). Commit a lockfile so dependency installation is reproducible."
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        if: steps.detect.outputs.manager == 'pnpm'
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: ${{ steps.detect.outputs.manager }}
+
+      - name: Install dependencies
+        run: |
+          case "${{ steps.detect.outputs.manager }}" in
+            pnpm) pnpm install --frozen-lockfile ;;
+            npm)  npm ci ;;
+            yarn) yarn install --frozen-lockfile ;;
+          esac
+
+      # Runs every enabled check, collecting results rather than stopping at the
+      # Runs before the project's own checks, and before anything expensive: a
+      # committed credential is worse than a failing test, and finding it early
+      # shortens the window between commit and rotation.
+      #
+      # Scans every tracked file rather than the diff. A credential committed
+      # before this step existed would otherwise never be found by anything,
+      # which is the case most worth catching.
+      - name: Scan for committed credentials
+        run: node scripts/scan-for-secrets.mjs
+
+      # Advisory rather than blocking. A high-severity advisory in a transitive
+      # dependency is real, but failing every build until an upstream fix lands
+      # stops the loop on something no agent here can repair.
+      - name: Audit dependencies
+        continue-on-error: true
+        run: |
+          case "${{ steps.detect.outputs.manager }}" in
+            pnpm) pnpm audit --audit-level=high ;;
+            npm)  npm audit --audit-level=high ;;
+            yarn) yarn npm audit --severity high ;;
+          esac
+
+      # first failure, then writes ci-result.json and appends the run's summary
+      # table to $GITHUB_STEP_SUMMARY. Exits non-zero if any check failed.
+      - name: Run project checks
+        id: checks
+        run: node scripts/run-ci-checks.mjs
+
+      # if: always() so artifacts survive a failing run — the fix agent needs
+      # the logs from the run that failed.
+      - name: Upload CI result
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ci-result
+          path: ci-result.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload test reports and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-reports
+          path: |
+            coverage/
+            test-results/
+            junit.xml
+            **/*.log
+          if-no-files-found: ignore
+          retention-days: 14

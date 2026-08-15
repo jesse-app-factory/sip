@@ -1,0 +1,107 @@
+# Merges an approved pull request, when every §15 condition is satisfied.
+#
+# cancel-in-progress: false — this workflow merges and closes issues.
+# Cancelling mid-run could merge a change without recording its outcome.
+#
+# Spends nothing and judges nothing: there is no Claude step here. Every input
+# is a fact — checks from GitHub, the verdict from the review marker, policy
+# from the default branch's manifest — which is what makes §15's "the coding
+# agent cannot directly bypass the merge gate" true by construction rather than
+# by trust.
+#
+# The next task starts on its own: agent-dispatch.yml already triggers on
+# pull_request closed, so merging is the dispatch.
+name: Agent Merge
+
+on:
+  workflow_run:
+    workflows: ["Agent Review"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Pull request to merge
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: read
+  # write, not read: after merging it asks CI to check the default branch,
+  # which nothing else will, because GitHub starts no workflow for a
+  # GITHUB_TOKEN push.
+  actions: write
+
+concurrency:
+  group: agent-merge-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    name: Merge approved pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Checks out the default branch — the gate runs the specification's code,
+      # never the candidate's.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      # No pull request is resolved here on purpose. A workflow_run event
+      # carries the *triggering* run's branch, so a review that was re-run by
+      # hand arrives naming the default branch and resolves to nothing — seen
+      # live. The script scans the open agent pull requests instead, which also
+      # means a dropped event costs a delay rather than a permanently unmerged
+      # approval. PR_NUMBER is passed only for a hand-picked run.
+      #
+      # Exits 0 whether or not it merges: "not ready" is a normal outcome on a
+      # workflow that runs after every review.
+      - name: Merge if permitted
+        id: merge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pull_request_number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node scripts/merge-pull-request.mjs
+
+      # Ask CI to check what was just merged.
+      #
+      # The merge is made with GITHUB_TOKEN, and GitHub starts no workflow for
+      # events that token creates — so without this the default branch carries a
+      # commit nothing ever checked, and §18's "default-branch CI is green" can
+      # never be satisfied. A live run found exactly that.
+      #
+      # It also sequences completion for free: agent-dispatch already wakes on
+      # CI finishing, and by the time it decides the project is done, the check
+      # run the evaluator looks for exists.
+      - name: Ask CI to check the default branch
+        if: steps.merge.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if ! gh workflow run ci.yml --ref "${DEFAULT_BRANCH}"; then
+            # Not fatal: the scheduled dispatch and the watchdog both come back,
+            # and a missing check refuses completion rather than faking it.
+            echo "::warning::Could not trigger CI on ${DEFAULT_BRANCH}; completion will refuse until it runs."
+          fi
+
+      - name: Upload merge outcome
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: merge-${{ github.run_id }}
+          path: .agent/
+          # .agent is a dotfile directory; without this the artifact uploads
+          # empty and reports success.
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

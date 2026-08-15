@@ -1,0 +1,345 @@
+[
+  {
+    "id": "TASK-001",
+    "title": "Expo TypeScript skeleton with every dependency and check the project will need",
+    "description": "Create the Expo (React Native) application shell in TypeScript, install the complete dependency set the later tasks require, and define the four npm scripts the factory's CI runs. This task establishes the project's shape and owns package.json for the whole project — no later task may modify dependencies, so anything a later task needs must be installed here. Install: expo, react, react-native, react-native-svg, react-native-reanimated, expo-notifications, @react-native-async-storage/async-storage, plus TypeScript, ESLint, Jest and @testing-library/react-native as development dependencies. The app itself need only render a single placeholder screen; the point of this task is that the toolchain works, not that anything is built yet.",
+    "priority": "P0",
+    "dependencies": [],
+    "acceptanceCriteria": [
+      "`package.json` defines scripts named `lint`, `typecheck`, `test` and `build`, and each exits with code 0",
+      "`npm run typecheck` runs the TypeScript compiler with `strict: true` and reports no errors",
+      "`npm run build` produces a JavaScript bundle without requiring Xcode, Android Studio or any native toolchain",
+      "A lockfile is committed, and `npm ci` installs from it without modifying it",
+      "Every dependency listed in the task description is present in `package.json` at a pinned or caret version",
+      "The app renders one placeholder screen, and a test asserts that screen renders without throwing",
+      "Jest is configured so tests run in CI with no device, simulator or emulator available"
+    ],
+    "allowedPaths": [
+      "package.json",
+      "package-lock.json",
+      "tsconfig.json",
+      "app.json",
+      "babel.config.js",
+      "metro.config.js",
+      "jest.config.js",
+      "jest.setup.js",
+      "eslint.config.js",
+      ".eslintrc.js",
+      "App.tsx",
+      "index.ts",
+      "src/**",
+      "__tests__/**",
+      "assets/**",
+      ".gitignore"
+    ],
+    "forbiddenPaths": [".github/workflows/**", "scripts/**", "project-manifest.json"],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-002",
+    "title": "The hydration domain model, as pure functions",
+    "description": "Implement the rules of the app as pure TypeScript with no React, no storage and no platform imports: a daily goal, a day's logged entries, and the arithmetic over them. Every later task reads its behaviour from here rather than reimplementing it, so this is where correctness is decided and where it is cheapest to test.",
+    "priority": "P0",
+    "dependencies": ["TASK-001"],
+    "acceptanceCriteria": [
+      "A goal is an amount in millilitres; creating one with zero, a negative number, a non-integer or a non-number throws a TypeError rather than returning an invalid goal",
+      "Adding an entry returns a new day value and never mutates the day it was given",
+      "`progress` returns a number from 0 to 1, clamped at 1 when the goal is exceeded, and 0 for a day with no entries",
+      "Goal met is true when the total is greater than or equal to the goal, and remains true if the goal is later raised above the total only when the total still meets it",
+      "Undoing removes the single most recent entry, and is a no-op that throws nothing on a day with no entries",
+      "Each entry carries an ISO 8601 timestamp, and the time since the last entry is `null` for a day with no entries rather than zero or infinity",
+      "No file in this task imports React, React Native, or any storage or platform module",
+      "`npm test` covers each criterion above, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": ["src/domain/**", "__tests__/domain/**"],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-003",
+    "title": "On-device persistence behind a swappable interface",
+    "description": "Persist the goal, today's entries and previous days' totals to the device using AsyncStorage, reached through an interface so tests can substitute an in-memory implementation. Nothing leaves the device, there is no account, and there is no network call anywhere in this task.",
+    "priority": "P0",
+    "dependencies": ["TASK-002"],
+    "acceptanceCriteria": [
+      "The goal and the current day's entries survive closing and reopening the app",
+      "Each past day is retained under its own date key, so history is not overwritten when a new day starts",
+      "Stored data that is absent, empty, or not valid JSON yields documented defaults instead of throwing",
+      "Storage is defined as an interface with an AsyncStorage implementation and an in-memory implementation, and every test in this task uses the in-memory one",
+      "No test in this task calls AsyncStorage directly",
+      "`npm test` covers each criterion above, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": ["src/storage/**", "src/domain/**", "__tests__/storage/**"],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-004",
+    "title": "Set and change the daily goal",
+    "description": "A screen where the user sets their daily water goal in millilitres and changes it at any point during the day. Changing the goal must not disturb what has already been logged — the two are independent, and conflating them is the obvious way to get this wrong.",
+    "priority": "P0",
+    "dependencies": ["TASK-003"],
+    "acceptanceCriteria": [
+      "The goal can be set, is persisted, and is shown as the current value when the app is reopened",
+      "The goal can be changed while entries already exist that day, and the logged entries are unchanged by it",
+      "Zero, negative, non-numeric and empty input are rejected with a message visible on screen, and nothing is written to storage",
+      "The screen reads and writes through the storage interface from TASK-003 rather than touching AsyncStorage itself",
+      "`npm test` covers each criterion above, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": [
+      "src/screens/**",
+      "src/components/**",
+      "src/navigation/**",
+      "App.tsx",
+      "__tests__/screens/**",
+      "__tests__/components/**"
+    ],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-005",
+    "title": "Log a glass, undo it, and see where the day stands",
+    "description": "The main screen: tap to log a glass, see today's total and what remains, and undo a mistake. This is the screen the user opens ten times a day, so it must be one tap to log and must persist immediately rather than on some later event.",
+    "priority": "P0",
+    "dependencies": ["TASK-004"],
+    "acceptanceCriteria": [
+      "Logging a glass of a chosen size increases today's total and is persisted before the interaction completes",
+      "Undo removes the most recent glass and restores the previous total",
+      "Today's total, the goal, and the amount remaining are all visible without scrolling",
+      "When the date changes, a new day starts at zero and the previous day's total is retained in history rather than discarded",
+      "Reopening the app on the same day shows the same total, not a reset one",
+      "`npm test` covers each criterion above, including the date change, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": [
+      "src/screens/**",
+      "src/components/**",
+      "src/domain/**",
+      "src/storage/**",
+      "__tests__/**"
+    ],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-006",
+    "title": "The blob character, as a presentational component",
+    "description": "An SVG blob character whose appearance is a function of two props and nothing else: how far through the goal the day is, and what mood it should show. It holds no state, reads no storage, and knows nothing about water — which is what makes it testable and what stops it becoming the place where logic accidentally lives.",
+    "priority": "P1",
+    "dependencies": ["TASK-001"],
+    "acceptanceCriteria": [
+      "The component takes a `progress` prop between 0 and 1 and a `mood` prop, and takes no other input",
+      "Its rendered size is a pure function of `progress`, asserted at 0, 0.5 and 1 with three different results",
+      "At a progress of 1 or above it renders its happy variant, and below 1 it does not",
+      "Rendering twice with identical props produces identical output — no randomness, no time-dependence",
+      "No file in this task imports from the storage or domain modules",
+      "`npm test` covers each criterion above, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": ["src/components/blob/**", "__tests__/components/blob/**"],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-007",
+    "title": "Animate the blob's growth and celebration",
+    "description": "Give the blob smooth motion using Reanimated: it grows towards its new size when a glass is logged rather than snapping, and celebrates when the goal is reached. Because no automated check can judge whether motion looks good, the criteria below constrain what is verifiable — the timings, the triggers, and the accessibility escape hatch — and leave the aesthetics to be tuned by hand afterwards.",
+    "priority": "P1",
+    "dependencies": ["TASK-005", "TASK-006"],
+    "acceptanceCriteria": [
+      "The blob's size transitions between progress values over time using Reanimated rather than changing in a single frame",
+      "Logging a glass triggers the growth transition, and reaching the goal triggers a distinct celebration animation that the growth transition alone does not produce",
+      "Animation durations are exported named constants, and tests assert the triggers use them rather than inline numbers",
+      "When the operating system's reduce-motion setting is enabled, animations are skipped and the blob renders directly at its final size",
+      "No animation blocks logging a glass: a second glass can be logged while an animation is still running",
+      "`npm test` covers each criterion above, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": [
+      "src/components/blob/**",
+      "src/components/**",
+      "src/screens/**",
+      "__tests__/**"
+    ],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-008",
+    "title": "Local reminders when the user has not had a drink for a while",
+    "description": "Schedule local notifications with expo-notifications when no glass has been logged for a configured interval. These are scheduled on the device — there is no server, no push service, and no credential of any kind. Scheduling goes through an interface so tests can assert what would have been scheduled without scheduling anything.",
+    "priority": "P1",
+    "dependencies": ["TASK-005"],
+    "acceptanceCriteria": [
+      "When the configured interval passes with no glass logged, a local notification is scheduled reminding the user to drink",
+      "Logging a glass cancels any pending reminder and schedules the next one from that moment",
+      "Once the day's goal is met, no further reminders are scheduled for that day",
+      "If the user denies notification permission, the app continues to work with no crash, and the denial is recorded so the user is not asked repeatedly",
+      "Scheduling is defined as an interface with a real implementation and a fake, and no test schedules a real notification or requests a real permission",
+      "No code in this task performs a network request",
+      "`npm test` covers each criterion above, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": [
+      "src/notifications/**",
+      "src/screens/**",
+      "src/storage/**",
+      "__tests__/**"
+    ],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-009",
+    "title": "Settings: reminder interval, quiet hours, and an off switch",
+    "description": "A settings screen controlling the reminder behaviour built in TASK-008. Quiet hours matter more than they look: a hydration app that wakes someone at three in the morning gets deleted, so the window must be respected at scheduling time rather than by dismissing notifications after they fire.",
+    "priority": "P1",
+    "dependencies": ["TASK-008"],
+    "acceptanceCriteria": [
+      "The reminder interval is configurable, persists, and changing it reschedules any pending reminder",
+      "Quiet hours are configurable as a start and end time, and no reminder is scheduled to fire inside that window",
+      "A quiet-hours window that crosses midnight is handled correctly rather than treated as an empty range",
+      "Notifications can be switched off entirely, which cancels everything already scheduled",
+      "All settings persist through the storage interface and survive reopening the app",
+      "`npm test` covers each criterion above, including the window crossing midnight, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": [
+      "src/screens/**",
+      "src/storage/**",
+      "src/notifications/**",
+      "src/domain/**",
+      "__tests__/**"
+    ],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-010",
+    "title": "Recent history and the current streak",
+    "description": "Show the last seven days and the current streak of days on which the goal was met. Each day is judged against the goal that applied on that day, not today's goal, so raising the goal does not retroactively break a past success.",
+    "priority": "P2",
+    "dependencies": ["TASK-003"],
+    "acceptanceCriteria": [
+      "The last seven days are listed, each showing that day's total against the goal that applied on that day",
+      "The current streak counts consecutive days on which the goal was met, ending today or yesterday",
+      "A day with no recorded data counts as not met and breaks the streak rather than being skipped",
+      "A streak of zero renders without error, as does a history containing no days at all",
+      "Today counts towards the streak only once its goal has actually been met",
+      "`npm test` covers each criterion above, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": [
+      "src/screens/**",
+      "src/domain/**",
+      "src/components/**",
+      "src/storage/**",
+      "__tests__/**"
+    ],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-011",
+    "title": "First-run onboarding",
+    "description": "On first launch, walk the user through setting an initial goal and asking for notification permission, then never show it again. Skipping must leave a working app rather than a broken one — an onboarding flow that can strand the user is worse than no onboarding at all.",
+    "priority": "P2",
+    "dependencies": ["TASK-004", "TASK-009"],
+    "acceptanceCriteria": [
+      "On first launch the app shows onboarding that sets an initial daily goal and requests notification permission",
+      "Completing onboarding is recorded, and it does not appear on any subsequent launch",
+      "Skipping onboarding leaves a usable app with a documented default goal and reminders switched off",
+      "Onboarding does not appear again after the app is reopened, whether it was completed or skipped",
+      "`npm test` covers each criterion above, and lint, typecheck and build exit 0"
+    ],
+    "allowedPaths": [
+      "src/screens/**",
+      "src/navigation/**",
+      "src/storage/**",
+      "App.tsx",
+      "__tests__/**"
+    ],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-012",
+    "title": "A README that explains how to run and use the app",
+    "description": "Document the finished app for someone who has never seen it: what it does, how to run it on a phone with Expo Go, how to run the checks, and how the reminders actually behave. This task exists because a finished app nobody can start is not finished, and because the reminder rules are the part a user will otherwise have to read the source to understand.",
+    "priority": "P2",
+    "dependencies": ["TASK-007", "TASK-010", "TASK-011"],
+    "acceptanceCriteria": [
+      "`README.md` explains what the app does in a short opening paragraph",
+      "It gives the exact commands to install dependencies and start the app, and to open it on a phone using Expo Go",
+      "It lists the commands for lint, typecheck, test and build, and every command it lists runs successfully against the repository as it stands",
+      "It describes when reminders fire, how quiet hours affect them, and how to switch them off",
+      "It states that data is stored only on the device, with no account and no server, and that clearing app data loses history",
+      "It documents that animations are skipped when the operating system's reduce-motion setting is on",
+      "Lint, typecheck, test and build all exit 0"
+    ],
+    "allowedPaths": ["README.md"],
+    "forbiddenPaths": [
+      ".github/workflows/**",
+      "scripts/**",
+      "project-manifest.json",
+      "package.json",
+      "package-lock.json"
+    ],
+    "estimatedComplexity": "small"
+  }
+]

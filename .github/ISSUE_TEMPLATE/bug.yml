@@ -1,0 +1,45 @@
+name: Bug report
+description: Something in the generated project behaves incorrectly.
+title: "[BUG] "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Observed behavior, including exact error output where available.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The minimal sequence that reproduces the problem.
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA
+      description: The commit where this was observed.
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 — blocks all work
+        - P1 — blocks this feature
+        - P2 — degraded but usable
+        - P3 — minor
+    validations:
+      required: true

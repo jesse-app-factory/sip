@@ -1,0 +1,30 @@
+{
+  "factorySchemaVersion": 1,
+  "projectId": "sip",
+  "projectName": "Sip",
+  "projectSlug": "sip",
+  "defaultBranch": "main",
+  "packageChecksum": "005392faff4fec683af64ad4f70900a1d7ea2e684eccc93fa18e38ecf28ceccb",
+  "commands": {
+    "lint": {
+      "enabled": true,
+      "script": "lint"
+    },
+    "typecheck": {
+      "enabled": true,
+      "script": "typecheck"
+    },
+    "test": {
+      "enabled": true,
+      "script": "test"
+    },
+    "integration": {
+      "enabled": false,
+      "script": "test:integration"
+    },
+    "build": {
+      "enabled": true,
+      "script": "build"
+    }
+  }
+}

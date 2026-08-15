@@ -1,0 +1,67 @@
+# Finds and repairs a stalled autonomous loop (plan doc §16, Step MVP-9.3).
+#
+# Every silent failure this system has produced was a stall rather than a crash:
+# a claim with no run behind it, a closed issue reading as in flight, a merge
+# whose bookkeeping died halfway. None of them raised an error anywhere. This
+# workflow is the only thing that looks.
+#
+# It never starts an agent. Its repair for a lost dispatch is to trigger the
+# dispatcher, which holds its own mutex and re-reads issue state under it before
+# starting anything — so "never start a duplicate agent" is structural here
+# rather than a thing this workflow has to get right.
+name: Watchdog
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  # Reading workflow runs is how the watchdog knows whether anything is in
+  # flight; writing is how it triggers the dispatcher.
+  actions: write
+  # Check runs decide whether a pull request is waiting on CI or was abandoned
+  # by it.
+  checks: read
+
+# Deliberately NOT the agent-work group that implement and fix share.
+#
+# GitHub keeps only one pending run per concurrency group and cancels the older
+# one when a new run queues. Sharing the group would let a queued watchdog
+# cancel a queued agent run — the watchdog causing the exact stall it exists to
+# repair. It stands down by observing instead: if any agent run is queued or
+# running, it exits without writing anything.
+#
+# cancel-in-progress: false — this performs repair writes, and a repair
+# cancelled halfway leaves state half-corrected, which is worse than late.
+concurrency:
+  group: watchdog-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    name: Check for stalled work
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # No staging step here, unlike agent-implement and agent-fix. Those check
+      # out an agent branch, which can carry a stale — or agent-edited — copy of
+      # the factory's own scripts. A scheduled or manually dispatched run always
+      # runs from the default branch, so this checkout is already the current
+      # copy and there is nothing to protect against.
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: Run the watchdog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/run-watchdog.mjs

@@ -1,0 +1,178 @@
+# Independently evaluates a pull request against its acceptance criteria.
+#
+# cancel-in-progress: true — review is read-only and idempotent. A newer commit
+# invalidates an in-flight review anyway, so superseding it is safe and cheaper
+# than letting a stale review finish.
+#
+# PERMISSIONS: contents is read-only by design. The reviewer must never be able
+# to push code or merge; it may only publish a review. An implementer must never
+# be the sole reviewer of its own work.
+#
+# Triggered by workflow_run, which GitHub always runs from the DEFAULT BRANCH.
+# That is load-bearing: the scripts and task policy therefore come from the
+# specification rather than from the branch under review, so a pull request
+# cannot alter the checks applied to it. agent-implement.yml has to stage its
+# scripts explicitly to get the same property; here it is free.
+name: Agent Review
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Pull request to review
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  # Reading check runs for the head commit is how the evaluator knows whether
+  # CI passed. Without it the API returns 403 "Resource not accessible by
+  # integration" — found by a live run, since no mock enforces token scopes.
+  checks: read
+  # Required by claude-code-action to mint its GitHub App token via OIDC.
+  id-token: write
+  actions: read
+
+concurrency:
+  group: agent-review-${{ github.repository }}-${{ github.event.workflow_run.head_branch || inputs.pull_request_number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Review pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # A CI run on the default branch, or on a branch with no pull request, has
+      # nothing to review. Resolved first so the job exits before spending
+      # anything.
+      - name: Resolve pull request
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PR: ${{ inputs.pull_request_number }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            PR_NUMBER="${INPUT_PR}"
+          else
+            # A red pull request belongs to the fix loop, not to review. Without
+            # this, the evaluator reports CHECKS_FAILED, the AI reviewer is
+            # skipped, and the issue is marked agent:blocked — pre-empting
+            # agent-fix.yml on every CI failure.
+            if [ "${RUN_CONCLUSION}" != "success" ]; then
+              echo "CI concluded '${RUN_CONCLUSION}'; leaving this branch to the fix loop."
+              echo "found=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+
+            case "${HEAD_BRANCH}" in
+              agent/*) ;;
+              *) echo "Branch '${HEAD_BRANCH}' is not an agent branch; nothing to review." ;;
+            esac
+            PR_NUMBER="$(gh pr list --head "${HEAD_BRANCH}" --state open --json number --jq '.[0].number // empty')"
+          fi
+
+          if [ -z "${PR_NUMBER}" ]; then
+            echo "No open pull request to review."
+            echo "found=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "found=true" >> "${GITHUB_OUTPUT}"
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "Reviewing pull request #${PR_NUMBER}."
+
+      - name: Check Claude credentials
+        if: steps.target.outputs.found == 'true'
+        env:
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${OAUTH_TOKEN}" ] && [ -z "${API_KEY}" ]; then
+            echo "::error::Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set. See docs/operations/setup-claude-auth.md in the factory repository."
+            exit 1
+          fi
+
+      # Checks out the default branch, not the branch under review — the
+      # reviewer runs the specification's scripts, never the candidate's.
+      - name: Checkout
+        if: steps.target.outputs.found == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node.js
+        if: steps.target.outputs.found == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: Run deterministic acceptance checks
+        id: evaluate
+        if: steps.target.outputs.found == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.target.outputs.pr_number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node scripts/evaluate-pull-request.mjs
+
+      # Skipped when the deterministic checks failed: §14 forbids the reviewer
+      # from overriding one, so there is nothing left for it to decide and a
+      # paid run would buy nothing.
+      - name: Run Claude reviewer
+        id: claude
+        if: steps.target.outputs.found == 'true' && steps.evaluate.outputs.status == 'passed'
+        uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: "github-actions[bot],claude,autonomous-app-factory"
+          # Read and Write only: the reviewer reads its brief and writes its
+          # verdict. It has no Bash and no Edit, so it cannot run the tests it
+          # is judging or alter the code under review.
+          claude_args: >-
+            --model ${{ vars.CLAUDE_MODEL || 'claude-opus-5' }}
+            --max-turns ${{ vars.MAX_REVIEW_TURNS || '30' }}
+            --allowedTools "Read,Write,Glob,Grep"
+          prompt: |
+            Read `.agent/review-context.md` and review the pull request it
+            describes. You did not write this change.
+
+            Write your verdict to `.agent/review-result.json` in the shape given
+            at the end of that file. A review that writes no verdict is recorded
+            as "changes requested", so an empty result cannot pass anything.
+
+      - name: Capture reviewer log
+        if: always() && steps.target.outputs.found == 'true' && steps.evaluate.outcome == 'success'
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/capture-agent-log.mjs
+
+      # Publishes whatever was decided, including "nothing was decided".
+      - name: Publish review
+        if: always() && steps.target.outputs.found == 'true' && steps.evaluate.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.target.outputs.pr_number }}
+          ISSUE_NUMBER: ${{ steps.evaluate.outputs.issue_number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node scripts/publish-review.mjs
+
+      - name: Upload review artifacts
+        if: always() && steps.target.outputs.found == 'true' && steps.evaluate.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: review-${{ steps.target.outputs.pr_number }}-${{ github.run_id }}
+          path: .agent/
+          # .agent is a dotfile directory; without this the artifact uploads
+          # empty and reports success.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

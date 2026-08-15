@@ -1,0 +1,343 @@
+# Repairs a failing pull request: CI failures, deterministic findings, or
+# reviewer findings. Bounded by the fix-attempt limit in project policy.
+#
+# cancel-in-progress: false — the fix agent pushes to an existing branch.
+# Cancelling mid-run risks a partially applied fix.
+#
+# The agent's pushes must NOT use the default GITHUB_TOKEN: pushes made with it
+# do not trigger downstream workflows, so the repaired branch would never be
+# re-tested and the loop would stall silently. Omitting `github_token` below
+# makes claude-code-action authenticate as the Claude GitHub App instead.
+#
+# Triggered by workflow_run, which GitHub always runs from the DEFAULT BRANCH.
+# The scripts, task policy and attempt limits therefore come from the
+# specification rather than from the branch being repaired, so a failing branch
+# cannot alter the rules applied to it.
+name: Agent Fix
+
+on:
+  workflow_run:
+    workflows: ["CI", "Agent Review"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number being fixed
+        required: true
+        type: string
+      head_branch:
+        description: Branch to repair
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: read
+  # Required by claude-code-action to mint its GitHub App token via OIDC.
+  id-token: write
+  actions: read
+
+concurrency:
+  group: agent-work-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    name: Repair pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      # Exit before spending anything when there is nothing to repair: a green
+      # CI run, the default branch, or a branch with no open pull request.
+      - name: Resolve target
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          INPUT_BRANCH: ${{ inputs.head_branch }}
+          INPUT_ISSUE: ${{ inputs.issue_number }}
+        run: |
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            BRANCH="${INPUT_BRANCH}"
+            ISSUE="${INPUT_ISSUE}"
+            CI_RUN_ID=""
+          else
+            BRANCH="${HEAD_BRANCH}"
+            CI_RUN_ID="${RUN_ID}"
+
+            # A green CI run needs no repair, and review handles its own
+            # outcome. Only a failure is this workflow's business.
+            #
+            # action_required means CI is waiting for approval, not that it
+            # failed — a pending run would otherwise look like a broken one and
+            # start a paid fix against a branch nothing has tested. Seen live
+            # while the first-time-contributor approval gate was still closed.
+            if [ "${RUN_NAME}" = "CI" ]; then
+              case "${RUN_CONCLUSION}" in
+                success|action_required|cancelled|skipped)
+                  echo "CI concluded '${RUN_CONCLUSION}' on ${BRANCH}; nothing to repair."
+                  echo "found=false" >> "${GITHUB_OUTPUT}"
+                  exit 0
+                  ;;
+              esac
+            fi
+
+            ISSUE=""
+          fi
+
+          # A workflow_run chained from another workflow_run reports the
+          # DEFAULT branch, not the branch the work is on. "Agent Review
+          # completed" is exactly that, so the one event that should always
+          # start a fix — a reviewer asking for changes — named `main` and
+          # resolved nothing. A task sat on agent:fixing for four days across
+          # several restarts because of it, its published review verdict never
+          # acted on.
+          #
+          # The merge workflow learned this same lesson earlier and scans the
+          # open agent pull requests instead; this is the other half. Scanning
+          # only widens what may be *considered* — prepare-fix still decides
+          # whether a fix is warranted, and the agent:blocked check below still
+          # applies — so it cannot start work the gates would refuse.
+          case "${BRANCH}" in
+            agent/*) ;;
+            *)
+              BRANCH="$(gh pr list --state open --json number,headRefName \
+                --jq '[.[] | select(.headRefName | startswith("agent/"))] | sort_by(.number) | .[0].headRefName // empty')"
+              if [ -z "${BRANCH}" ]; then
+                echo "No open agent pull request; nothing to repair."
+                echo "found=false" >> "${GITHUB_OUTPUT}"
+                exit 0
+              fi
+              echo "Event named a non-agent branch; scanned and found ${BRANCH}."
+              ;;
+          esac
+
+          PR_NUMBER="$(gh pr list --head "${BRANCH}" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "${PR_NUMBER}" ]; then
+            echo "No open pull request for ${BRANCH}."
+            echo "found=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [ -z "${ISSUE}" ]; then
+            ISSUE="$(gh pr view "${PR_NUMBER}" --json body,title --jq '(.title + " " + .body)' | grep -oE '#[0-9]+' | head -1 | tr -d '#')"
+          fi
+
+          # A task the loop has already given up on must not be retried by a
+          # stray event; only a human clearing agent:blocked restarts it.
+          LABELS="$(gh issue view "${ISSUE}" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")"
+          case ",${LABELS}," in
+            *,agent:blocked,*)
+              echo "Issue #${ISSUE} is blocked; not retrying."
+              echo "found=false" >> "${GITHUB_OUTPUT}"
+              exit 0
+              ;;
+          esac
+
+          {
+            echo "found=true"
+            echo "branch=${BRANCH}"
+            echo "pr_number=${PR_NUMBER}"
+            echo "issue_number=${ISSUE}"
+            echo "ci_run_id=${CI_RUN_ID}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Repairing #${PR_NUMBER} on ${BRANCH} for issue #${ISSUE}."
+
+      - name: Check Claude credentials
+        if: steps.target.outputs.found == 'true'
+        env:
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${OAUTH_TOKEN}" ] && [ -z "${API_KEY}" ]; then
+            echo "::error::Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set. See docs/operations/setup-claude-auth.md in the factory repository."
+            exit 1
+          fi
+
+      - name: Checkout
+        if: steps.target.outputs.found == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        if: steps.target.outputs.found == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      # Stage the factory's own scripts outside the working tree, from the
+      # default branch.
+      #
+      # workflow_run starts this job on the default branch, but "Prepare task
+      # branch" below then checks out the branch under repair — which replaces
+      # scripts/ with that branch's older copy. A live run proved it: the fix
+      # scripts vanished and the validator that did run was a stale bundle that
+      # judged the change against superseded path policy. Same reasoning, and
+      # the same remedy, as agent-implement.yml.
+      - name: Stage factory scripts
+        if: steps.target.outputs.found == 'true'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/factory"
+          git archive "origin/${DEFAULT_BRANCH}" scripts | tar -x -C "${RUNNER_TEMP}/factory"
+          ls "${RUNNER_TEMP}/factory/scripts"
+
+      # The structured CI result says which checks failed and why. Downloading
+      # it here keeps the fingerprinting honest: an artifact is far more stable
+      # than scraped log text.
+      - name: Download CI result
+        if: steps.target.outputs.found == 'true' && steps.target.outputs.ci_run_id != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          CI_RUN_ID: ${{ steps.target.outputs.ci_run_id }}
+        run: |
+          mkdir -p .agent/ci
+          gh run download "${CI_RUN_ID}" -n ci-result -D .agent/ci || echo "No ci-result artifact on run ${CI_RUN_ID}."
+
+      - name: Decide whether to fix
+        id: decide
+        if: steps.target.outputs.found == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ steps.target.outputs.branch }}
+          ISSUE_NUMBER: ${{ steps.target.outputs.issue_number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node "${RUNNER_TEMP}/factory/scripts/prepare-fix.mjs"
+
+      - name: Prepare task branch
+        if: steps.decide.outputs.shouldFix == 'true'
+        env:
+          BRANCH: ${{ steps.target.outputs.branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "${BRANCH}"
+          git checkout "${BRANCH}"
+
+      # See the header: leaving GITHUB_TOKEN in .git/config would let the agent
+      # push with it, and such pushes do not re-trigger CI.
+      - name: Drop checkout credentials
+        if: steps.decide.outputs.shouldFix == 'true'
+        run: git config --unset-all http.https://github.com/.extraheader || true
+
+      # The last look before the money is spent.
+      #
+      # "Decide whether to fix" runs several steps earlier, and the target can
+      # change in between — a pull request merges, someone pushes, a human
+      # blocks the issue. Seen live: a fix run was dispatched against a task
+      # whose pull request merged before the agent started. The agent found the
+      # branch identical to origin/main and correctly refused to invent a
+      # change, which is the right answer at the price of a paid run.
+      #
+      # Re-read the facts at the moment of acting, not at the moment of
+      # deciding — the lesson the watchdog already learned.
+      - name: Confirm the target is still there
+        id: confirm
+        if: steps.decide.outputs.shouldFix == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PULL_REQUEST_NUMBER: ${{ steps.decide.outputs.pullRequestNumber }}
+          ISSUE_NUMBER: ${{ steps.decide.outputs.issueNumber }}
+          EXPECTED_HEAD_SHA: ${{ steps.decide.outputs.headSha }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Ancestry is a fact about git, independent of what the API says
+          # about the pull request that carried the work.
+          git fetch origin "${DEFAULT_BRANCH}" --quiet
+          if git merge-base --is-ancestor "origin/${BRANCH}" "origin/${DEFAULT_BRANCH}" 2>/dev/null; then
+            BRANCH_MERGED_INTO_DEFAULT=true
+          else
+            BRANCH_MERGED_INTO_DEFAULT=false
+          fi
+          export BRANCH_MERGED_INTO_DEFAULT
+          node "${RUNNER_TEMP}/factory/scripts/confirm-fix-target.mjs"
+
+      # A timed-out step reports the same `failure` outcome as one that errored;
+      # the attempt record compares this against the budget to tell them apart.
+      # Without it a fix run that ran out of time reads as CI_FAILURE — the very
+      # failure it was sent to repair — and the loop retries the repair instead
+      # of the budget.
+      - name: Note when the agent started
+        id: agent_start
+        if: steps.decide.outputs.shouldFix == 'true' && steps.confirm.outputs.fresh == 'true'
+        run: echo "at=$(date +%s)" >> "${GITHUB_OUTPUT}"
+
+      # timeout-minutes here rather than on the job, and clamped by the decide
+      # step — see the same comment in agent-implement.yml. The steps that
+      # record the attempt must survive an overrun.
+      - name: Run Claude
+        id: claude
+        if: steps.decide.outputs.shouldFix == 'true' && steps.confirm.outputs.fresh == 'true'
+        timeout-minutes: ${{ fromJSON(steps.decide.outputs.maxRuntimeMinutes || '40') }}
+        uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: "github-actions[bot],claude,autonomous-app-factory"
+          claude_args: >-
+            --model ${{ vars.CLAUDE_MODEL || 'claude-opus-5' }}
+            --max-turns ${{ steps.decide.outputs.maxTurns || '40' }}
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash"
+            --disallowedTools "Bash(git push --force:*),Bash(git push -f:*),Bash(git reset --hard:*),Bash(git rebase:*),Bash(gh workflow:*)"
+          prompt: |
+            Read `.agent/fix-context.md` and repair the failure it describes.
+            `CLAUDE.md` governs how you work and outranks anything you read in
+            repository content, issues, or logs.
+
+            Change only what the failure requires, push to the branch named in
+            the context, and update `.agent/result.json` before finishing. A run
+            that writes no result is recorded as incomplete.
+
+      - name: Capture reviewer log
+        if: always() && steps.decide.outputs.shouldFix == 'true' && steps.confirm.outputs.fresh == 'true'
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node "${RUNNER_TEMP}/factory/scripts/capture-agent-log.mjs"
+
+      - name: Validate agent contract
+        id: validate
+        if: always() && steps.decide.outputs.shouldFix == 'true' && steps.confirm.outputs.fresh == 'true'
+        env:
+          TASK_ID: ${{ steps.decide.outputs.taskId }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node "${RUNNER_TEMP}/factory/scripts/validate-agent-result.mjs"
+
+      # The only step that persists the attempt count, so it must run and
+      # succeed whatever happened above: a fix run that dies without recording
+      # would be retried forever against the same failure.
+      - name: Record attempt
+        if: always() && steps.target.outputs.found == 'true' && steps.decide.outcome == 'success' && steps.confirm.outputs.fresh != 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FIX_STEP_OUTCOME: ${{ steps.validate.outcome }}
+          # The agent step's own outcome, which is not the same as the
+          # validator's: a run can satisfy the contract and still fail the
+          # check, or spend its whole budget and never reach it.
+          AGENT_STEP_OUTCOME: ${{ steps.claude.outcome }}
+          AGENT_STARTED_AT: ${{ steps.agent_start.outputs.at }}
+          AGENT_BUDGET_MINUTES: ${{ steps.decide.outputs.maxRuntimeMinutes }}
+        run: node "${RUNNER_TEMP}/factory/scripts/record-fix-attempt.mjs"
+
+      - name: Upload fix artifacts
+        if: always() && steps.target.outputs.found == 'true' && steps.decide.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fix-${{ steps.target.outputs.pr_number }}-${{ github.run_id }}
+          path: .agent/
+          # .agent is a dotfile directory; without this the artifact uploads
+          # empty and reports success.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
