@@ -14944,7 +14944,25 @@ var MESSAGE_RULES = [
     "CLAUDE_QUOTA",
     "the message reports a reached usage limit"
   ],
-  [/rate limit|too many requests|429/, "CLAUDE_RATE_LIMIT", "the message reports a rate limit"],
+  // No bare `429`. These patterns run against a whole captured execution log —
+  // half a megabyte of JSON — and three digits match anywhere: a UUID segment,
+  // a base64 run, or the date inside a version string. That last one really
+  // happened: `55.0.3-canary-20260429-a5e59cf` classified a run that exhausted
+  // its turn budget as a rate limit, which routed it to a wait that would have
+  // released it to fail identically, forever, at full price.
+  //
+  // An HTTP status is evidence, not prose: `classifyStatus` reads
+  // `evidence.status` for it. Text only claims a rate limit when it says so.
+  // Nor `rate_limit`. The log carries a `rate_limit_event` on every run, whose
+  // `status` is usually "allowed" — telemetry saying the request went through.
+  // Matching it would misclassify every failure as a rate limit, which is worse
+  // than the bare-429 bug it was written to replace and was caught only by
+  // running the real 500KB log through it.
+  [
+    /rate limit|too many requests|status(?: code)?[ :]+429|http 429/,
+    "CLAUDE_RATE_LIMIT",
+    "the message reports a rate limit"
+  ],
   [
     /invalid (api key|x-api-key)|authentication_error|header 'authorization' has invalid value|oauth token.*(expired|invalid)/,
     "AUTHENTICATION",

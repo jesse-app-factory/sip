@@ -179,7 +179,25 @@ var MESSAGE_RULES = [
     "CLAUDE_QUOTA",
     "the message reports a reached usage limit"
   ],
-  [/rate limit|too many requests|429/, "CLAUDE_RATE_LIMIT", "the message reports a rate limit"],
+  // No bare `429`. These patterns run against a whole captured execution log —
+  // half a megabyte of JSON — and three digits match anywhere: a UUID segment,
+  // a base64 run, or the date inside a version string. That last one really
+  // happened: `55.0.3-canary-20260429-a5e59cf` classified a run that exhausted
+  // its turn budget as a rate limit, which routed it to a wait that would have
+  // released it to fail identically, forever, at full price.
+  //
+  // An HTTP status is evidence, not prose: `classifyStatus` reads
+  // `evidence.status` for it. Text only claims a rate limit when it says so.
+  // Nor `rate_limit`. The log carries a `rate_limit_event` on every run, whose
+  // `status` is usually "allowed" — telemetry saying the request went through.
+  // Matching it would misclassify every failure as a rate limit, which is worse
+  // than the bare-429 bug it was written to replace and was caught only by
+  // running the real 500KB log through it.
+  [
+    /rate limit|too many requests|status(?: code)?[ :]+429|http 429/,
+    "CLAUDE_RATE_LIMIT",
+    "the message reports a rate limit"
+  ],
   [
     /invalid (api key|x-api-key)|authentication_error|header 'authorization' has invalid value|oauth token.*(expired|invalid)/,
     "AUTHENTICATION",
@@ -228,6 +246,11 @@ function classifyStatus(status, message) {
   if (status >= 500)
     return ["INFRASTRUCTURE", `HTTP ${status}`];
   return null;
+}
+function reachedMaxTurns(log) {
+  if (!log)
+    return false;
+  return /"?error_max_turns"?|reached maximum number of turns/i.test(log);
 }
 function classify(evidence) {
   const message = (evidence.message ?? "").toLowerCase();
@@ -14972,10 +14995,16 @@ function timeoutEvidence() {
 function main(options = {}) {
   const repoRoot = options.repoRoot ?? process3.cwd();
   const parsed = parseAgentResult(readIfPresent(path2.join(repoRoot, RESULT_FILE)));
+  const executionLog = readIfPresent(path2.join(repoRoot, EXECUTION_LOG_FILE));
   const classification = classify({
-    message: readIfPresent(path2.join(repoRoot, EXECUTION_LOG_FILE)),
+    message: executionLog,
     invalidAgentOutput: !parsed.ok,
-    agentTimedOut: agentTimedOut(timeoutEvidence())
+    agentTimedOut: agentTimedOut(timeoutEvidence()),
+    // Read as a fact rather than left to the text rules. Without it a run that
+    // spent its turn budget was classified by whatever else the log happened to
+    // contain, and a date inside a version string made it a rate limit — a wait
+    // that would have released the task to fail the same way indefinitely.
+    maxTurnsReached: reachedMaxTurns(executionLog)
   });
   const quotaExhausted = classification.category === "CLAUDE_QUOTA" || parsed.result?.status === "quota_exceeded";
   const needsAWait = quotaExhausted || waitsForRecovery(classification.category);
@@ -14987,7 +15016,11 @@ function main(options = {}) {
   }) : needsAWait ? [
     `**Diagnosis:** ${renderClassification(classification)}`,
     "",
-    `This is a wait, not a failure. The work so far is preserved on \`${branch}\`, and the watchdog releases the pause once the interval has passed. No action is needed unless it keeps recurring.`
+    // Only claim work survived when the run said it committed something.
+    // This read "the work so far is preserved on <branch>" unconditionally,
+    // and said it about a run that never pushed a commit and left no
+    // branch at all — reassurance about something that did not exist.
+    parsed.result?.commitSha ? `This is a wait, not a failure. Work is preserved on \`${branch}\` at \`${parsed.result.commitSha.slice(0, 8)}\`, and the watchdog releases the pause once the interval has passed. No action is needed unless it keeps recurring.` : "This is a wait, not a failure. The run recorded no commit, so there is nothing to resume from \u2014 the task restarts from the beginning once the watchdog releases the pause. No action is needed unless it keeps recurring."
   ].join("\n") : `**Diagnosis:** ${renderClassification(classification)}`;
   mkdirSync2(path2.join(repoRoot, ".agent"), { recursive: true });
   writeFileSync2(path2.join(repoRoot, DIAGNOSIS_FILE), `${body}

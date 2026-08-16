@@ -4,7 +4,7 @@
   "projectName": "Sip",
   "projectSlug": "sip",
   "defaultBranch": "main",
-  "packageChecksum": "7fd0862cc5eecf8abd0a9afdd6c7dcec3201473301d8a3c48a63aa513c8bee3b",
+  "packageChecksum": "0ad5554be44feff890d563677379833749323a8109dacc9216a39f413661d2c0",
   "commands": {
     "lint": {
       "enabled": true,
@@ -28,7 +28,7 @@
     }
   },
   "policy": {
-    "autoStart": false,
+    "autoStart": true,
     "autoMerge": {
       "enabled": true,
       "method": "squash"
@@ -36,7 +36,7 @@
     "maxImplementationAttempts": 2,
     "maxFixAttempts": 3,
     "maxReviewAttempts": 2,
-    "maxAgentTurns": 60,
+    "maxAgentTurns": 100,
     "maxAgentRuntimeMinutes": 40,
     "maxConcurrentAgents": 1,
     "maxChangedFilesPerTask": 40,
