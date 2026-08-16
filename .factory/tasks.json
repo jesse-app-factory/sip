@@ -1,18 +1,17 @@
 [
   {
     "id": "TASK-001",
-    "title": "Expo TypeScript skeleton with every dependency and check the project will need",
-    "description": "Create the Expo (React Native) application shell in TypeScript, install the complete dependency set the later tasks require, and define the four npm scripts the factory's CI runs. This task establishes the project's shape and owns package.json for the whole project — no later task may modify dependencies, so anything a later task needs must be installed here. Install: expo, react, react-native, react-native-svg, react-native-reanimated, expo-notifications, @react-native-async-storage/async-storage, plus TypeScript, ESLint, Jest and @testing-library/react-native as development dependencies. The app itself need only render a single placeholder screen; the point of this task is that the toolchain works, not that anything is built yet.",
+    "title": "Expo TypeScript scaffold that lints, typechecks and builds",
+    "description": "Create the Expo (React Native) application in TypeScript and nothing else. No test framework, and none of the app's feature dependencies — those are TASK-013 and TASK-014. This task exists only to prove the toolchain works, because everything after it fails confusingly if it does not. An earlier version of this task also installed seven dependencies and configured Jest, and exhausted a 100-turn budget twice without committing anything; the work was not wrong, there was simply too much of it for one run.",
     "priority": "P0",
     "dependencies": [],
     "acceptanceCriteria": [
-      "`package.json` defines scripts named `lint`, `typecheck`, `test` and `build`, and each exits with code 0",
-      "`npm run typecheck` runs the TypeScript compiler with `strict: true` and reports no errors",
-      "`npm run build` produces a JavaScript bundle without requiring Xcode, Android Studio or any native toolchain",
+      "The repository holds an Expo application in TypeScript that renders one placeholder screen",
+      "`tsconfig.json` sets `strict: true`, and `npm run typecheck` reports no errors",
+      "`npm run lint` and `npm run build` each exit 0, and `build` needs no Xcode, Android Studio or native toolchain",
+      "`npm test` exists and exits 0 — a placeholder is correct here, because TASK-013 installs the test framework and CI must stay green in between",
       "A lockfile is committed, and `npm ci` installs from it without modifying it",
-      "Every dependency listed in the task description is present in `package.json` at a pinned or caret version",
-      "The app renders one placeholder screen, and a test asserts that screen renders without throwing",
-      "Jest is configured so tests run in CI with no device, simulator or emulator available"
+      "No dependency beyond what the Expo TypeScript template itself requires is installed"
     ],
     "allowedPaths": [
       "package.json",
@@ -21,16 +20,64 @@
       "app.json",
       "babel.config.js",
       "metro.config.js",
-      "jest.config.js",
-      "jest.setup.js",
       "eslint.config.js",
       ".eslintrc.js",
       "App.tsx",
       "index.ts",
       "src/**",
-      "__tests__/**",
       "assets/**",
       ".gitignore"
+    ],
+    "forbiddenPaths": [".github/workflows/**", "scripts/**", "project-manifest.json"],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-013",
+    "title": "Jest and React Native Testing Library, with one passing test",
+    "description": "Install and configure the test framework so every later task can write tests. This is its own task because the React Native Jest preset and its transform configuration are the fiddliest part of the setup, and a run that has to get them right alongside everything else gets neither.",
+    "priority": "P0",
+    "dependencies": ["TASK-001"],
+    "acceptanceCriteria": [
+      "Jest and `@testing-library/react-native` are installed, and `npm test` runs Jest rather than a placeholder",
+      "One test renders the placeholder screen and asserts it renders without throwing",
+      "Tests run with no device, simulator or emulator available, as they must in CI",
+      "`npm test`, `npm run lint`, `npm run typecheck` and `npm run build` each exit 0",
+      "The committed lockfile is updated, and `npm ci` installs from it without modifying it"
+    ],
+    "allowedPaths": [
+      "package.json",
+      "package-lock.json",
+      "jest.config.js",
+      "jest.setup.js",
+      "babel.config.js",
+      "tsconfig.json",
+      "__tests__/**",
+      "src/**"
+    ],
+    "forbiddenPaths": [".github/workflows/**", "scripts/**", "project-manifest.json"],
+    "estimatedComplexity": "medium"
+  },
+  {
+    "id": "TASK-014",
+    "title": "Install the four feature dependencies the app will need",
+    "description": "Install the runtime dependencies later tasks require, and prove each one loads. Installing them together, once, keeps a single task responsible for package.json — no later task may change dependencies, so anything missing here is a specification error to report rather than to install.",
+    "priority": "P0",
+    "dependencies": ["TASK-013"],
+    "acceptanceCriteria": [
+      "`react-native-svg`, `react-native-reanimated`, `expo-notifications` and `@react-native-async-storage/async-storage` are all installed at versions Expo supports for this SDK",
+      "`react-native-reanimated` is wired into the Babel configuration as its documentation requires, since it does not work without that",
+      "A test imports each of the four and asserts the import succeeds, so a broken install fails here rather than three tasks later",
+      "`npm test`, `npm run lint`, `npm run typecheck` and `npm run build` each exit 0",
+      "The committed lockfile is updated, and `npm ci` installs from it without modifying it"
+    ],
+    "allowedPaths": [
+      "package.json",
+      "package-lock.json",
+      "babel.config.js",
+      "jest.config.js",
+      "jest.setup.js",
+      "__tests__/**",
+      "src/**"
     ],
     "forbiddenPaths": [".github/workflows/**", "scripts/**", "project-manifest.json"],
     "estimatedComplexity": "medium"
@@ -40,7 +87,7 @@
     "title": "The hydration domain model, as pure functions",
     "description": "Implement the rules of the app as pure TypeScript with no React, no storage and no platform imports: a daily goal, a day's logged entries, and the arithmetic over them. Every later task reads its behaviour from here rather than reimplementing it, so this is where correctness is decided and where it is cheapest to test.",
     "priority": "P0",
-    "dependencies": ["TASK-001"],
+    "dependencies": ["TASK-013"],
     "acceptanceCriteria": [
       "A goal is an amount in millilitres; creating one with zero, a negative number, a non-integer or a non-number throws a TypeError rather than returning an invalid goal",
       "Adding an entry returns a new day value and never mutates the day it was given",
@@ -66,7 +113,7 @@
     "title": "On-device persistence behind a swappable interface",
     "description": "Persist the goal, today's entries and previous days' totals to the device using AsyncStorage, reached through an interface so tests can substitute an in-memory implementation. Nothing leaves the device, there is no account, and there is no network call anywhere in this task.",
     "priority": "P0",
-    "dependencies": ["TASK-002"],
+    "dependencies": ["TASK-002", "TASK-014"],
     "acceptanceCriteria": [
       "The goal and the current day's entries survive closing and reopening the app",
       "Each past day is retained under its own date key, so history is not overwritten when a new day starts",
@@ -150,7 +197,7 @@
     "title": "The blob character, as a presentational component",
     "description": "An SVG blob character whose appearance is a function of two props and nothing else: how far through the goal the day is, and what mood it should show. It holds no state, reads no storage, and knows nothing about water — which is what makes it testable and what stops it becoming the place where logic accidentally lives.",
     "priority": "P1",
-    "dependencies": ["TASK-001"],
+    "dependencies": ["TASK-014"],
     "acceptanceCriteria": [
       "The component takes a `progress` prop between 0 and 1 and a `mood` prop, and takes no other input",
       "Its rendered size is a pure function of `progress`, asserted at 0, 0.5 and 1 with three different results",

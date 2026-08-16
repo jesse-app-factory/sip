@@ -16,16 +16,25 @@ Expo rather than bare React Native because the app needs no custom native code,
 and Expo Go lets the app run on a real phone by scanning a QR code — no Xcode, no
 Android Studio, no developer account.
 
-## Dependencies are fixed at TASK-001
+## Dependencies are fixed by the three setup tasks
 
-TASK-001 installs every dependency the project will use and owns `package.json`
-for the whole project. No later task may modify dependencies.
+TASK-001, TASK-013 and TASK-014 are the only tasks that may touch
+`package.json` and the lockfile. Between them they establish the scaffold, the
+test framework, and the four feature dependencies. **No other task may modify
+dependencies.**
 
-This is deliberate. It means a later task cannot quietly add a package nobody
-reviewed, and it removes an entire class of merge conflict. The cost is that a
-task needing an unforeseen dependency is blocked rather than proceeding — which
-is the correct outcome: it is a specification error, and it should be fixed in
-the specification.
+This is deliberate. A later task cannot quietly add a package nobody reviewed,
+and an entire class of merge conflict disappears. The cost is that a task
+needing an unforeseen dependency is blocked rather than proceeding — which is
+the correct outcome: it is a specification error, and it belongs in the
+specification.
+
+The setup is three tasks rather than one because it was one, and that did not
+work. A single task asking for the scaffold, strict TypeScript, Jest with the
+React Native preset, and seven dependencies exhausted a 100-turn budget twice
+without committing anything. Nothing about the work was wrong; there was
+simply too much of it to finish in one run, and a run that finishes nothing
+leaves nothing to build on.
 
 ## Structure
 

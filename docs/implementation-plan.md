@@ -1,25 +1,43 @@
 # Sip — Implementation Plan
 
-Twelve tasks. The order below is the dependency order, and it is chosen so that
+Fourteen tasks. The order below is the dependency order, and it is chosen so that
 each task is verifiable when it lands rather than only once something later
 arrives.
 
 ## The chain
 
-| Task     | Builds                          | Depends on    |
-| -------- | ------------------------------- | ------------- |
-| TASK-001 | Expo skeleton, all dependencies | —             |
-| TASK-002 | Pure hydration logic            | 001           |
-| TASK-003 | On-device persistence           | 002           |
-| TASK-004 | Goal setting                    | 003           |
-| TASK-005 | Logging, undo, today's total    | 004           |
-| TASK-006 | The blob, presentational        | 001           |
-| TASK-007 | Animation                       | 005, 006      |
-| TASK-008 | Local reminders                 | 005           |
-| TASK-009 | Settings: interval, quiet hours | 008           |
-| TASK-010 | History and streak              | 003           |
-| TASK-011 | First-run onboarding            | 004, 009      |
-| TASK-012 | README                          | 007, 010, 011 |
+Listed in execution order. The identifiers are labels, not positions —
+TASK-013 and TASK-014 were added when the original TASK-001 was split, and
+keeping the numbers of the tasks after it meant not rewriting a dozen issues
+that were already correct.
+
+| Task     | Builds                              | Depends on    |
+| -------- | ----------------------------------- | ------------- |
+| TASK-001 | Expo scaffold, lint/typecheck/build | —             |
+| TASK-013 | Jest and one passing test           | 001           |
+| TASK-014 | The four feature dependencies       | 013           |
+| TASK-002 | Pure hydration logic                | 013           |
+| TASK-003 | On-device persistence               | 002, 014      |
+| TASK-004 | Goal setting                        | 003           |
+| TASK-005 | Logging, undo, today's total        | 004           |
+| TASK-006 | The blob, presentational            | 014           |
+| TASK-007 | Animation                           | 005, 006      |
+| TASK-008 | Local reminders                     | 005           |
+| TASK-009 | Settings: interval, quiet hours     | 008           |
+| TASK-010 | History and streak                  | 003           |
+| TASK-011 | First-run onboarding                | 004, 009      |
+| TASK-012 | README                              | 007, 010, 011 |
+
+### Why the setup is three tasks
+
+It was one, and it failed twice — exhausting a 60-turn budget and then a
+100-turn one without committing anything. The work was not wrong; there was
+too much of it to land in a single run, and a run that lands nothing leaves
+nothing to build on.
+
+Split, each piece is verifiable on its own. TASK-013 in particular gets the
+React Native Jest preset — the fiddliest part of the whole setup — to itself,
+rather than competing for turns with four dependency installs.
 
 TASK-006 and TASK-010 depend on early tasks rather than on the chain, so they can
 be built at several points in the sequence. That is intentional — it exercises
@@ -27,7 +45,7 @@ the dependency graph rather than a straight line.
 
 ## Why this order
 
-**The toolchain first.** TASK-001 exists to prove lint, typecheck, test and build
+**The toolchain first.** TASK-001, TASK-013 and TASK-014 exist to prove lint, typecheck, test and build
 all work before anything depends on them. An Expo and Jest setup that half-works
 is the single most likely way for this project to stall, and it is far cheaper to
 discover in the first task than the fifth.
@@ -60,10 +78,14 @@ tests is incomplete regardless of whether the app appears to work.
 
 ## Known risks
 
-**The Expo and Jest configuration in TASK-001.** React Native testing needs a
-specific Jest preset and transform configuration. If TASK-001 gets this wrong,
-every subsequent task fails for reasons unrelated to its own work. This is the
-task most worth reading carefully when it lands.
+**The Jest configuration in TASK-013.** React Native testing needs a specific
+preset and transform configuration, and if it is wrong every later task fails
+for reasons unrelated to its own work. This is the task most worth reading
+carefully when it lands.
+
+It is also the reason the setup is split at all: this configuration used to
+share a run with the scaffold and four dependency installs, and that run ran
+out of turns twice without committing anything.
 
 **Testing animation.** No automated check can decide whether motion looks
 pleasant. TASK-007's criteria therefore constrain triggers, durations and the
