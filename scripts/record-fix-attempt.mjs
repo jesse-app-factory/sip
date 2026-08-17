@@ -14646,6 +14646,19 @@ var LIMIT_NAMES = Object.keys(GLOBAL_MAXIMA);
 
 // ../agent-contract/dist/gitFacts.js
 import { execFileSync } from "node:child_process";
+var GENERATED_FILES = [
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lockb",
+  "Cargo.lock",
+  "poetry.lock",
+  "Gemfile.lock",
+  "composer.lock",
+  "go.sum"
+];
+var GENERATED = new Set(GENERATED_FILES);
 
 // ../agent-contract/dist/redactSecrets.js
 var withWrapping = (prefix, body = "A-Za-z0-9_-") => new RegExp(`${prefix}(?:[${body}]|\\s+(?=[${body}]))*`, "g");

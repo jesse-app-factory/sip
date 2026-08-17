@@ -14822,10 +14822,27 @@ function collectGitFacts(repoRoot, defaultBranch) {
     changedLines
   };
 }
+var GENERATED_FILES = [
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lockb",
+  "Cargo.lock",
+  "poetry.lock",
+  "Gemfile.lock",
+  "composer.lock",
+  "go.sum"
+];
+var GENERATED = new Set(GENERATED_FILES);
+function isGeneratedFile(filePath) {
+  return GENERATED.has(filePath.split("/").pop() ?? filePath);
+}
 function countChangedLines(numstat) {
   let total = 0;
   for (const line of lines(numstat)) {
-    const [added, deleted] = line.split("	");
+    const [added, deleted, filePath] = line.split("	");
+    if (filePath !== void 0 && isGeneratedFile(filePath)) continue;
     total += Number.parseInt(added ?? "", 10) || 0;
     total += Number.parseInt(deleted ?? "", 10) || 0;
   }

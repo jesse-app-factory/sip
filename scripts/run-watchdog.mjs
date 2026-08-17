@@ -15048,6 +15048,19 @@ var LIMIT_NAMES = Object.keys(GLOBAL_MAXIMA);
 
 // ../agent-contract/dist/gitFacts.js
 import { execFileSync } from "node:child_process";
+var GENERATED_FILES = [
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lockb",
+  "Cargo.lock",
+  "poetry.lock",
+  "Gemfile.lock",
+  "composer.lock",
+  "go.sum"
+];
+var GENERATED = new Set(GENERATED_FILES);
 
 // ../agent-contract/dist/redactSecrets.js
 var withWrapping = (prefix, body = "A-Za-z0-9_-") => new RegExp(`${prefix}(?:[${body}]|\\s+(?=[${body}]))*`, "g");
@@ -15245,6 +15258,20 @@ function detect(facts, policy, now2) {
   for (const issue2 of facts.issues) {
     const finding = findForIssue(facts, issue2, policy, now2, runActive);
     if (finding !== null) findings.push(finding);
+  }
+  for (const issue2 of facts.issues) {
+    if (issue2.state !== "open" || ACTIVE_STATUSES.has(issue2.status)) continue;
+    if (issue2.status === "DONE" || issue2.status === "FAILED") continue;
+    const pullRequest = pullRequestForTask(facts, issue2.taskId);
+    if (pullRequest === null || pullRequest.checkRunCount > 0) continue;
+    if (minutesSince(pullRequest.createdAt, now2) <= policy.staleCiMinutes) continue;
+    findings.push({
+      kind: "PULL_REQUEST_WITHOUT_CHECKS",
+      issueNumber: issue2.number,
+      taskId: issue2.taskId,
+      pullRequestNumber: pullRequest.number,
+      detail: `pull request #${pullRequest.number} has no checks at all, and issue #${issue2.number} is ${issue2.status} so nothing else is watching it`
+    });
   }
   for (const pullRequest of facts.mergedPullRequests) {
     const issue2 = facts.issues.find(
