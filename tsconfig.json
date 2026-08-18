@@ -1,6 +1,9 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    // Jest's globals (`describe`, `it`, `expect`) are ambient, so they have to
+    // be named here for `tsc` to see them in `__tests__/`.
+    "types": ["jest"]
   }
 }
