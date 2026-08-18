@@ -9,9 +9,16 @@
     "react-native": "0.86.2"
   },
   "devDependencies": {
+    "@react-native/jest-preset": "^0.86.2",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^29.5.14",
     "@types/react": "~19.2.2",
+    "babel-preset-expo": "~57.0.7",
     "eslint": "^9.39.5",
     "eslint-config-expo": "^57.0.1",
+    "jest": "~29.7.0",
+    "jest-expo": "~57.0.4",
+    "react-test-renderer": "^19.2.3",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -21,7 +28,7 @@
     "web": "expo start --web",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --eval \"console.log('No tests yet — TASK-013 installs the test framework.')\"",
+    "test": "jest",
     "build": "expo export --platform android --output-dir dist"
   },
   "private": true
