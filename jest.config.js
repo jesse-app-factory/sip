@@ -9,6 +9,11 @@
  */
 module.exports = {
   preset: 'jest-expo',
+  // `react-native-reanimated` v4 loads through `react-native-worklets`, whose
+  // `.native` implementation calls into a TurboModule that does not exist under
+  // Jest. The resolver the package ships for exactly this case picks its
+  // non-native implementation instead, so importing Reanimated works in tests.
+  resolver: 'react-native-worklets/jest/resolver.js',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   // `__tests__/` mirrors `src/`, per docs/technical-spec.md.
   testMatch: ['<rootDir>/__tests__/**/*.test.[jt]s?(x)'],
