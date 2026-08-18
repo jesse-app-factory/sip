@@ -63,6 +63,7 @@ jobs:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           INPUT_BRANCH: ${{ inputs.head_branch }}
           INPUT_ISSUE: ${{ inputs.issue_number }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             BRANCH="${INPUT_BRANCH}"
@@ -87,6 +88,25 @@ jobs:
                   exit 0
                   ;;
               esac
+
+              # CI failing on the DEFAULT branch is not an agent's failure, and
+              # must not be attributed to one. The scan below deliberately
+              # widens what may be considered when an event names a non-agent
+              # branch — but it widens the *target*, not the *evidence*, and
+              # here the evidence is a failure belonging to main.
+              #
+              # Seen live: provisioning a project whose first task has not
+              # merged yet pushes the specification to main, where CI fails for
+              # want of the app that does not exist. That failure drove the fix
+              # loop against the open agent branch, was fingerprinted, matched a
+              # previous refusal, and spent three ledger entries reporting
+              # REPEATED_IDENTICAL_FAILURE for a failure nobody had attempted to
+              # repair.
+              if [ "${BRANCH}" = "${DEFAULT_BRANCH}" ]; then
+                echo "CI failed on the default branch '${BRANCH}'; that is not an agent branch's failure."
+                echo "found=false" >> "${GITHUB_OUTPUT}"
+                exit 0
+              fi
             fi
 
             ISSUE=""
