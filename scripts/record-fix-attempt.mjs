@@ -14809,6 +14809,14 @@ var agentRunSchema = external_exports.object({
 });
 
 // ../errors/dist/actionPolicy.js
+var WAITING_ACTIONS = /* @__PURE__ */ new Set([
+  "RETRY_WITH_BACKOFF",
+  "RETRY_AFTER_RESET",
+  "WAIT_FOR_QUOTA"
+]);
+function waitsForRecovery(category) {
+  return WAITING_ACTIONS.has(ACTION_POLICY[category].action);
+}
 var ACTION_POLICY = {
   TRANSIENT_NETWORK: {
     action: "RETRY_WITH_BACKOFF",
@@ -15358,7 +15366,8 @@ async function main(options = {}) {
       ...classification === null ? [] : ["", `**Diagnosis:** ${renderClassification(classification)}`]
     ].join("\n")
   );
-  const nextLabel = decision.shouldFix ? succeeded ? "agent:ci" : "agent:blocked" : BLOCKING_REASONS.has(decision.reason) ? "agent:blocked" : null;
+  const waiting = classification !== null && !succeeded && waitsForRecovery(classification.category);
+  const nextLabel = decision.shouldFix ? succeeded ? "agent:ci" : waiting ? "agent:quota" : "agent:blocked" : BLOCKING_REASONS.has(decision.reason) ? "agent:blocked" : null;
   if (nextLabel !== null) {
     await moveIssue(client, decision.issueNumber, nextLabel);
     process4.stdout.write(`Issue #${decision.issueNumber} \u2192 ${nextLabel}

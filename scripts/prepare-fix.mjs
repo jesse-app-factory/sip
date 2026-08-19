@@ -14777,6 +14777,7 @@ function failedChecks(result) {
 function fingerprintCiResult(result, fallbackCheckNames = []) {
   const failed = failedChecks(result);
   if (failed.length === 0) {
+    if (fallbackCheckNames.length === 0) return null;
     return fingerprintFailure({ failedChecks: fallbackCheckNames, errorLines: [] });
   }
   return fingerprintFailure({
@@ -15285,7 +15286,7 @@ function decideRetry(input) {
   if (observed !== void 0) {
     return { ...base, shouldRetry: false, reason: observed, explanation: explainReason(observed) };
   }
-  if (seenFingerprints(input.attempts, input.kind).has(input.fingerprint)) {
+  if (input.fingerprint !== null && seenFingerprints(input.attempts, input.kind).has(input.fingerprint)) {
     return {
       ...base,
       shouldRetry: false,
