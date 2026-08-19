@@ -71,6 +71,22 @@ function celebration(): number {
   return transform[0].scale;
 }
 
+/**
+ * What the platform reports the reduce-motion setting to be.
+ *
+ * Every test states this, rather than only the ones that want it on, because
+ * the answer cannot be restored afterwards: the React Native jest preset ships
+ * `AccessibilityInfo.isReduceMotionEnabled` as a `jest.fn()` already, and
+ * `jest.spyOn` hands back an existing mock instead of installing a restorable
+ * spy over it. `jest.restoreAllMocks()` has nothing registered to undo, and
+ * `clearMocks` clears recorded calls rather than implementations — so a test
+ * that turned the setting on would leave it on for whichever test ran next, and
+ * that test would watch the blob arrive at its final size in one frame.
+ */
+function reduceMotionIs(enabled: boolean): void {
+  jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(enabled);
+}
+
 function tapGlass(amountMl: number): void {
   fireEvent.press(screen.getByRole('button', { name: glassButtonLabel(amountMl) }));
 }
@@ -109,6 +125,9 @@ async function open(storage: HydrationStorage): Promise<void> {
 
 beforeEach(() => {
   jest.useFakeTimers();
+  // The setting every test but the reduced-motion ones assumes, said out loud
+  // so that no test inherits it from the one that ran before it.
+  reduceMotionIs(false);
 });
 
 afterEach(() => {
@@ -238,7 +257,7 @@ describe('logging while the blob is still moving', () => {
 
 describe('with the platform asking for reduced motion', () => {
   it('shows the glass at its final size with no animation', async () => {
-    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+    reduceMotionIs(true);
 
     const { storage } = await withGoalOf(1000);
     await open(storage);
@@ -252,7 +271,7 @@ describe('with the platform asking for reduced motion', () => {
   });
 
   it('shows the happy blob without celebrating when the goal is met', async () => {
-    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+    reduceMotionIs(true);
 
     const { storage } = await withGoalOf(500);
     await open(storage);
