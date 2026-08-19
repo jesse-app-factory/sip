@@ -1,13 +1,24 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, StyleSheet, Text } from 'react-native';
+
+import { GoalScreen } from './src/screens';
+import { createAsyncStorageHydrationStorage } from './src/storage';
+
+/**
+ * The composition root: the one place that decides which implementation of the
+ * storage interface the app runs on. Screens are handed it and never build
+ * their own, which is what lets a test hand them the in-memory one instead —
+ * see docs/architecture.md, "Why interfaces for storage and notifications".
+ */
+const storage = createAsyncStorageHydrationStorage();
 
 export default function App() {
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.title}>Sip</Text>
-      <Text style={styles.subtitle}>Placeholder screen — the app starts here.</Text>
+      <GoalScreen storage={storage} />
       <StatusBar style="auto" />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -15,16 +26,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   title: {
     fontSize: 32,
     fontWeight: '600',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-    color: '#555',
+    paddingTop: 24,
+    paddingHorizontal: 24,
   },
 });
