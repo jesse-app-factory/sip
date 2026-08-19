@@ -7,6 +7,7 @@
  * directly, which is what lets every screen be rendered in a test.
  */
 export type { GoalScreenProps, ParsedGoal } from './GoalScreen';
+export type { TodayScreenProps } from './TodayScreen';
 
 export {
   EMPTY_GOAL_MESSAGE,
@@ -18,3 +19,17 @@ export {
   parseGoalInput,
   SAVED_MESSAGE,
 } from './GoalScreen';
+export {
+  DATE_CHECK_INTERVAL_MS,
+  GLASS_SIZES_ML,
+  glassButtonLabel,
+  GOAL_LABEL,
+  GOAL_MET_MESSAGE,
+  LOADING_MESSAGE,
+  REMAINING_LABEL,
+  statLabel,
+  TodayScreen,
+  TOTAL_LABEL,
+  UNDO_LABEL,
+  WRITE_FAILED_MESSAGE,
+} from './TodayScreen';
