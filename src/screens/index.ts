@@ -20,6 +20,7 @@ export {
   SAVED_MESSAGE,
 } from './GoalScreen';
 export {
+  BLOB_MOOD,
   DATE_CHECK_INTERVAL_MS,
   GLASS_SIZES_ML,
   glassButtonLabel,
