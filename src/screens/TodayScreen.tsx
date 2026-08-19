@@ -52,6 +52,27 @@
  * the domain's `progress`, so the blob is shown the same figure the stats are,
  * and the animation is the blob's own business — logging never waits for it,
  * and nothing here is disabled while it runs.
+ *
+ * ## Reminders
+ *
+ * Step 5 of the same data flow: the screen "cancels the pending reminder and
+ * schedules the next through the notification interface". That is one call —
+ * `sync` — because cancelling and rescheduling are one decision, and it is
+ * made after the write rather than before it, so a reminder is never moved on
+ * the strength of a glass that failed to save.
+ *
+ * The day as it now stands is what `sync` is given, so whether the goal has
+ * been met and when the last glass was logged are read from the same value the
+ * screen is showing. Whether that means scheduling anything at all is the
+ * service's decision, not this screen's.
+ *
+ * Nothing here waits for it. Logging is finished once the day is stored and on
+ * screen; a slow or refused notification call must not hold up the next glass,
+ * and the service never rejects, so there is nothing to catch.
+ *
+ * The screen is handed the service the same way it is handed its storage, and
+ * works without one — a screen rendered with no reminders simply schedules
+ * none.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -71,6 +92,7 @@ import {
   totalMl,
   undoLastEntry,
 } from '../domain';
+import type { ReminderService } from '../notifications';
 import type { HydrationStorage } from '../storage';
 
 /**
@@ -135,12 +157,18 @@ export interface TodayScreenProps {
   readonly now?: () => Date;
   /** Told about every day that reached storage, for whatever composes this. */
   readonly onDayChanged?: (day: Day) => void;
+  /**
+   * The reminder scheduling from TASK-008 — the device one, or the fake. A
+   * screen without one schedules nothing and behaves identically otherwise.
+   */
+  readonly reminders?: ReminderService;
 }
 
 export function TodayScreen({
   storage,
   now = systemClock,
   onDayChanged,
+  reminders,
 }: TodayScreenProps) {
   const [today, setToday] = useState<LocalDate>(() => toLocalDate(now(), 'Today'));
   const [day, setDay] = useState<Day | null>(null);
@@ -188,13 +216,17 @@ export function TodayScreen({
       if (active && current.current === null) {
         current.current = loaded;
         setDay(loaded);
+        // The app being opened is when the reminder for a day nothing has been
+        // logged against since is due — the interval runs from the last glass,
+        // whenever that was, rather than from this launch.
+        void reminders?.sync(loaded, now());
       }
     });
 
     return () => {
       active = false;
     };
-  }, [loadDay, today]);
+  }, [loadDay, now, reminders, today]);
 
   /**
    * Applies a change to the day the previous change left behind, writes it,
@@ -232,6 +264,10 @@ export function TodayScreen({
         setToday(date);
         setDay(after);
         onDayChanged?.(after);
+        // Not awaited: the glass is logged, and the reminder that follows from
+        // it is the notification system's business rather than something the
+        // next tap should queue behind.
+        void reminders?.sync(after, at);
       });
 
       // The queue survives a failed change, so one refused write does not stop
@@ -240,7 +276,7 @@ export function TodayScreen({
 
       return run;
     },
-    [loadDay, now, onDayChanged, storage],
+    [loadDay, now, onDayChanged, reminders, storage],
   );
 
   const logGlass = useCallback(

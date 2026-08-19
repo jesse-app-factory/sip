@@ -22,6 +22,13 @@ export const GOAL_KEY = `${KEY_PREFIX}goal`;
 export const DAY_KEY_PREFIX = `${KEY_PREFIX}day:`;
 
 /**
+ * The one key holding what the user answered about notification permission,
+ * recorded so they are not asked again on every launch — see
+ * docs/functional-spec.md, "Reminders".
+ */
+export const NOTIFICATION_PERMISSION_KEY = `${KEY_PREFIX}notificationPermission`;
+
+/**
  * The key a day is stored under, throwing `TypeError` for anything that is not
  * a real `YYYY-MM-DD` local date. A malformed date would otherwise create a
  * key nothing ever reads back, losing the day silently.
