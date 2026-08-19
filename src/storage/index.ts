@@ -1,0 +1,25 @@
+/**
+ * Persistence: one interface, two implementations, and the encoding they
+ * share.
+ *
+ * Everything the app stores is on the device. There is no account, no
+ * synchronisation and no network request anywhere here or anywhere else in the
+ * app, per docs/functional-spec.md, "Data".
+ *
+ * The app builds its storage with `createAsyncStorageHydrationStorage`; tests
+ * build theirs with `createInMemoryHydrationStorage`. Both are
+ * `createHydrationStorage` over a `KeyValueStore`, so the logic under test is
+ * the logic that runs on the phone.
+ */
+export type { HydrationStorage } from './hydrationStorage';
+export type { KeyValueStore } from './keyValueStore';
+export type { InMemoryKeyValueStore } from './inMemory';
+
+export { createHydrationStorage } from './hydrationStorage';
+export { createInMemoryHydrationStorage, createInMemoryKeyValueStore } from './inMemory';
+export {
+  createAsyncStorageHydrationStorage,
+  createAsyncStorageKeyValueStore,
+} from './asyncStorage';
+export { DAY_KEY_PREFIX, dayKey, GOAL_KEY, KEY_PREFIX } from './keys';
+export { decodeDay, decodeGoal, encodeDay, encodeGoal } from './records';
