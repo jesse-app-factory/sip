@@ -44,10 +44,19 @@
  * The current moment arrives as a prop rather than from the clock, per
  * docs/technical-spec.md, "Time", so a test can move the day forward instead
  * of waiting until midnight.
+ *
+ * ## The blob
+ *
+ * docs/architecture.md, "Data flow, logging a glass", step 4: the screen
+ * "recomputes progress and passes it to the blob, which animates". Progress is
+ * the domain's `progress`, so the blob is shown the same figure the stats are,
+ * and the animation is the blob's own business — logging never waits for it,
+ * and nothing here is disabled while it runs.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AnimatedBlob, BlobMood, useReduceMotion } from '../components';
 import {
   addEntry,
   createDay,
@@ -56,6 +65,7 @@ import {
   isGoalMet,
   lastEntry,
   LocalDate,
+  progress,
   remainingMl,
   toLocalDate,
   totalMl,
@@ -91,6 +101,17 @@ export const WRITE_FAILED_MESSAGE = 'That could not be saved. Please try again.'
 /** Shown until the day has been read back from storage. */
 export const LOADING_MESSAGE = 'Reading today…';
 
+/**
+ * The mood the blob is shown in on this screen.
+ *
+ * Constant, because nothing on this screen knows how to choose between the
+ * moods: whether a drink is overdue is a question about reminder intervals and
+ * whether it is the middle of the night is a question about quiet hours, and
+ * neither exists yet. Happiness is not a mood — the blob derives that from
+ * progress alone, per `BlobMood`.
+ */
+export const BLOB_MOOD: BlobMood = 'calm';
+
 /** What one glass button is called: one press, one glass, no further choices. */
 export function glassButtonLabel(amountMl: number): string {
   return `Log ${amountMl} ml`;
@@ -124,6 +145,7 @@ export function TodayScreen({
   const [today, setToday] = useState<LocalDate>(() => toLocalDate(now(), 'Today'));
   const [day, setDay] = useState<Day | null>(null);
   const [failed, setFailed] = useState(false);
+  const reduceMotion = useReduceMotion();
 
   // The day as of the last write, read by the next queued change. State cannot
   // serve here: a second press in the same tick would still see the first
@@ -246,6 +268,19 @@ export function TodayScreen({
       {day === null ? (
         <Text style={styles.loading}>{LOADING_MESSAGE}</Text>
       ) : (
+        <View style={styles.blob}>
+          {/* Mounted with the day rather than before it, so the blob's first
+              size is the size today has earned rather than an empty blob that
+              then grows to it. */}
+          <AnimatedBlob
+            mood={BLOB_MOOD}
+            progress={progress(day)}
+            reduceMotion={reduceMotion}
+          />
+        </View>
+      )}
+
+      {day !== null && (
         <View style={styles.stats}>
           <Stat label={TOTAL_LABEL} amountMl={totalMl(day)} emphasised />
           <Stat label={GOAL_LABEL} amountMl={day.goal.amountMl} />
@@ -322,6 +357,9 @@ const styles = StyleSheet.create({
   loading: {
     fontSize: 16,
     color: '#555',
+  },
+  blob: {
+    alignItems: 'center',
   },
   stats: {
     flexDirection: 'row',
