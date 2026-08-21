@@ -14963,7 +14963,8 @@ function toReviewedRecord(sha, result) {
 var DECISION_LABELS = {
   approve: "agent:review",
   request_changes: "agent:fixing",
-  blocked: "agent:blocked"
+  blocked: "agent:blocked",
+  unavailable: "agent:ci"
 };
 function readJson(filePath) {
   if (!existsSync2(filePath)) return null;
@@ -15035,15 +15036,16 @@ async function main(options = {}) {
   const deterministicFailed = evaluation === null || evaluation.status !== "passed";
   const parsed = deterministicFailed ? { ok: false, result: null, problems: [] } : parseReviewResult(rawResult);
   const approved = !deterministicFailed && parsed.result !== null && reviewPermitsMerge(parsed.result);
-  const decision = approved ? "approve" : parsed.result?.decision === "blocked" || deterministicFailed ? "blocked" : "request_changes";
+  const reviewUnavailable = !deterministicFailed && !parsed.ok && parsed.result === null;
+  const decision = approved ? "approve" : parsed.result?.decision === "blocked" || deterministicFailed ? "blocked" : reviewUnavailable ? "unavailable" : "request_changes";
   const reviewedSha = String(evaluation?.evidence?.headSha ?? "");
   const reviewedRecord = toReviewedRecord(reviewedSha, approved ? parsed.result : null);
-  const body = [
+  const body = reviewUnavailable ? renderReviewComment(parsed.result, evaluation, parsed.problems) : [
     renderReviewComment(parsed.result, evaluation, parsed.problems),
     "",
     renderReviewedMarker(reviewedRecord)
   ].join("\n");
-  const event = approved ? "COMMENT" : "REQUEST_CHANGES";
+  const event = approved || reviewUnavailable ? "COMMENT" : "REQUEST_CHANGES";
   const client = options.client ?? createRestReviewGitHub(env);
   await client.createReview(env.pullRequestNumber, event, body);
   const issueNumber = Number.parseInt(process5.env.ISSUE_NUMBER ?? "", 10);
