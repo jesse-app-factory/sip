@@ -8,6 +8,7 @@
  */
 export type { GoalScreenProps, ParsedGoal } from './GoalScreen';
 export type { HistoryScreenProps } from './HistoryScreen';
+export type { OnboardingScreenProps } from './OnboardingScreen';
 export type { SettingsScreenProps } from './SettingsScreen';
 export type { TodayScreenProps } from './TodayScreen';
 
@@ -32,6 +33,19 @@ export {
   NOTHING_LOGGED_MESSAGE,
   streakSummary,
 } from './HistoryScreen';
+export {
+  ALLOW_REMINDERS_LABEL,
+  CONTINUE_LABEL,
+  DECLINE_REMINDERS_LABEL,
+  GOAL_STEP_HEADING,
+  ONBOARDING_GOAL_INPUT_LABEL,
+  ONBOARDING_TITLE,
+  ONBOARDING_WRITE_FAILED_MESSAGE,
+  OnboardingScreen,
+  REMINDERS_STEP_HEADING,
+  SKIP_LABEL,
+  SKIP_NOTE,
+} from './OnboardingScreen';
 export {
   EMPTY_WINDOW_MESSAGE,
   formatDuration,
