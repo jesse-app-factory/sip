@@ -14,12 +14,19 @@
 export type { HydrationStorage } from './hydrationStorage';
 export type { KeyValueStore } from './keyValueStore';
 export type { InMemoryKeyValueStore } from './inMemory';
+export type { NotificationPermissionStorage } from './notificationPermission';
 
 export { createHydrationStorage } from './hydrationStorage';
 export { createInMemoryHydrationStorage, createInMemoryKeyValueStore } from './inMemory';
 export {
   createAsyncStorageHydrationStorage,
   createAsyncStorageKeyValueStore,
+  createAsyncStorageNotificationPermissionStorage,
 } from './asyncStorage';
-export { DAY_KEY_PREFIX, dayKey, GOAL_KEY, KEY_PREFIX } from './keys';
+export {
+  createNotificationPermissionStorage,
+  decodeNotificationPermission,
+  encodeNotificationPermission,
+} from './notificationPermission';
+export { DAY_KEY_PREFIX, dayKey, GOAL_KEY, KEY_PREFIX, NOTIFICATION_PERMISSION_KEY } from './keys';
 export { decodeDay, decodeGoal, encodeDay, encodeGoal } from './records';

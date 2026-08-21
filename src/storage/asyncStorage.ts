@@ -16,6 +16,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createHydrationStorage, HydrationStorage } from './hydrationStorage';
 import { KeyValueStore } from './keyValueStore';
+import {
+  createNotificationPermissionStorage,
+  NotificationPermissionStorage,
+} from './notificationPermission';
 
 /** The two methods of AsyncStorage this app uses, and nothing else. */
 interface AsyncStorageLike {
@@ -44,4 +48,12 @@ export function createAsyncStorageKeyValueStore(
 /** Storage as the running app uses it: on the device, and only on the device. */
 export function createAsyncStorageHydrationStorage(): HydrationStorage {
   return createHydrationStorage(createAsyncStorageKeyValueStore());
+}
+
+/**
+ * The recorded notification answer as the running app stores it, over the same
+ * device store.
+ */
+export function createAsyncStorageNotificationPermissionStorage(): NotificationPermissionStorage {
+  return createNotificationPermissionStorage(createAsyncStorageKeyValueStore());
 }
