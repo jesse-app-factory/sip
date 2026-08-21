@@ -11,6 +11,7 @@
  * `createHydrationStorage` over a `KeyValueStore`, so the logic under test is
  * the logic that runs on the phone.
  */
+export type { History, ReadHistoryOptions } from './history';
 export type { HydrationStorage } from './hydrationStorage';
 export type { KeyValueStore } from './keyValueStore';
 export type { InMemoryKeyValueStore } from './inMemory';
@@ -18,6 +19,7 @@ export type { NotificationPermissionStorage } from './notificationPermission';
 export type { ReminderSettingsStorage } from './reminderSettings';
 
 export { createHydrationStorage } from './hydrationStorage';
+export { MAX_STREAK_DAYS, readHistory } from './history';
 export { createInMemoryHydrationStorage, createInMemoryKeyValueStore } from './inMemory';
 export {
   createAsyncStorageHydrationStorage,
