@@ -2,26 +2,36 @@
  * What a reminder is, and when the next one is due.
  *
  * This is the part of reminders worth being certain about, so it is pure: a
- * day and a moment in, a reminder or `null` out. Nothing here schedules
- * anything, reads the clock or touches a platform API — the moment arrives as
- * an argument, per docs/technical-spec.md, "Time".
+ * day, a moment and the user's settings in, a reminder or `null` out. Nothing
+ * here schedules anything, reads the clock or touches a platform API — the
+ * moment arrives as an argument, per docs/technical-spec.md, "Time".
  *
  * The rules it encodes come from docs/functional-spec.md, "Reminders":
  *
  * - a reminder is due the configured interval after the most recent entry;
- * - once the day's goal is met, there is no next reminder that day.
+ * - once the day's goal is met, there is no next reminder that day;
+ * - no reminder is scheduled to fire inside the quiet-hours window;
+ * - reminders can be switched off entirely.
  *
- * The interval is a fixed constant here. TASK-009 makes it — and quiet hours —
- * configurable, which is why every function takes it as an argument rather
- * than reading the constant itself.
+ * All four are decided here rather than in the service, so "would a reminder
+ * be scheduled, and when" is one function a test can ask directly.
+ *
+ * ## Quiet hours move a reminder rather than dropping it
+ *
+ * docs/architecture.md, "Data flow, a reminder": "The quiet-hours window is
+ * applied when choosing the fire time. If the computed time falls inside the
+ * window, the reminder moves to the end of it." So a reminder due at three in
+ * the morning is scheduled for seven, not scheduled and then dismissed — the
+ * device is never asked to make a sound the user asked it not to, per
+ * docs/technical-spec.md, "Notifications".
  */
 import { Day, isGoalMet, IsoTimestamp, timeSinceLastEntry, toInstant } from '../domain';
-
-/**
- * How long without a glass before the user is reminded. Two hours: often
- * enough to matter across a working day, rare enough not to be a nuisance.
- */
-export const REMINDER_INTERVAL_MS = 2 * 60 * 60 * 1000;
+import { outsideQuietHours } from './quietHours';
+import {
+  assertReminderSettings,
+  defaultReminderSettings,
+  ReminderSettings,
+} from './settings';
 
 /** What the notification says. Exported so tests assert on the real wording. */
 export const REMINDER_TITLE = 'Time for a glass';
@@ -36,24 +46,8 @@ export interface Reminder {
 }
 
 /**
- * Narrows an unknown value to a usable interval, throwing `TypeError`
- * otherwise. Zero or a negative interval would schedule a reminder in the past
- * — one that never fires — so it is refused here rather than silently ignored
- * by the platform.
- */
-export function assertIntervalMs(value: unknown): asserts value is number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    throw new TypeError(
-      `A reminder interval must be a number of milliseconds greater than zero, received ${
-        typeof value === 'number' ? String(value) : typeof value
-      }`,
-    );
-  }
-}
-
-/**
- * When the next reminder for this day is due, or `null` when none is: the goal
- * being met is the whole of that case, per docs/functional-spec.md.
+ * When the next reminder for this day is due, or `null` when there is none:
+ * reminders switched off, or the day's goal already met.
  *
  * The interval runs from the most recent entry, so logging a glass moves the
  * reminder rather than adding one. Two cases share an answer of "a full
@@ -61,24 +55,31 @@ export function assertIntervalMs(value: unknown): asserts value is number {
  * has already elapsed. The second is someone opening the app long overdue —
  * they are looking at it, so the useful reminder is the next one rather than
  * one already late.
+ *
+ * The time that comes out is then moved clear of the quiet-hours window, which
+ * is the only step that can push a reminder past midnight into the next day.
  */
 export function nextReminderAt(
   day: Day,
   now: Date | string,
-  intervalMs: number = REMINDER_INTERVAL_MS,
+  settings: ReminderSettings = defaultReminderSettings(),
 ): IsoTimestamp | null {
-  assertIntervalMs(intervalMs);
+  assertReminderSettings(settings);
 
   const at = toInstant(now, 'The current moment');
 
-  if (isGoalMet(day)) {
+  if (!settings.enabled || isGoalMet(day)) {
     return null;
   }
 
   const elapsed = timeSinceLastEntry(day, at);
-  const remaining = elapsed === null || elapsed >= intervalMs ? intervalMs : intervalMs - elapsed;
+  const remaining =
+    elapsed === null || elapsed >= settings.intervalMs
+      ? settings.intervalMs
+      : settings.intervalMs - elapsed;
+  const due = new Date(at.getTime() + remaining);
 
-  return new Date(at.getTime() + remaining).toISOString();
+  return outsideQuietHours(settings.quietHours, due).toISOString();
 }
 
 /**
@@ -88,9 +89,9 @@ export function nextReminderAt(
 export function planReminder(
   day: Day,
   now: Date | string,
-  intervalMs: number = REMINDER_INTERVAL_MS,
+  settings: ReminderSettings = defaultReminderSettings(),
 ): Reminder | null {
-  const fireAt = nextReminderAt(day, now, intervalMs);
+  const fireAt = nextReminderAt(day, now, settings);
 
   return fireAt === null ? null : { title: REMINDER_TITLE, body: REMINDER_BODY, fireAt };
 }

@@ -127,10 +127,11 @@ export const LOADING_MESSAGE = 'Reading today…';
  * The mood the blob is shown in on this screen.
  *
  * Constant, because nothing on this screen knows how to choose between the
- * moods: whether a drink is overdue is a question about reminder intervals and
- * whether it is the middle of the night is a question about quiet hours, and
- * neither exists yet. Happiness is not a mood — the blob derives that from
- * progress alone, per `BlobMood`.
+ * moods: whether a drink is overdue is a question about the reminder interval
+ * and whether it is the middle of the night is a question about quiet hours,
+ * and this screen is handed neither — both are settings, and the reminder
+ * service is what reads them. Happiness is not a mood — the blob derives that
+ * from progress alone, per `BlobMood`.
  */
 export const BLOB_MOOD: BlobMood = 'calm';
 

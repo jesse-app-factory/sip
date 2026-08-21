@@ -20,6 +20,7 @@ import {
   createNotificationPermissionStorage,
   NotificationPermissionStorage,
 } from './notificationPermission';
+import { createReminderSettingsStorage, ReminderSettingsStorage } from './reminderSettings';
 
 /** The two methods of AsyncStorage this app uses, and nothing else. */
 interface AsyncStorageLike {
@@ -56,4 +57,12 @@ export function createAsyncStorageHydrationStorage(): HydrationStorage {
  */
 export function createAsyncStorageNotificationPermissionStorage(): NotificationPermissionStorage {
   return createNotificationPermissionStorage(createAsyncStorageKeyValueStore());
+}
+
+/**
+ * The reminder settings as the running app stores them, over the same device
+ * store.
+ */
+export function createAsyncStorageReminderSettingsStorage(): ReminderSettingsStorage {
+  return createReminderSettingsStorage(createAsyncStorageKeyValueStore());
 }
