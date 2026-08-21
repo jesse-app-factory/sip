@@ -10,11 +10,27 @@ export type { Goal } from './goal';
 export type { Entry } from './entry';
 export type { IsoTimestamp, LocalDate } from './time';
 export type { Day } from './day';
+export type { HistoryDay } from './history';
 
 export { assertMillilitres } from './millilitres';
 export { assertGoal, createGoal, defaultGoal, DEFAULT_GOAL_ML } from './goal';
 export { assertEntry, compareEntries, createEntry } from './entry';
-export { assertLocalDate, toInstant, toIsoTimestamp, toLocalDate } from './time';
+export {
+  assertLocalDate,
+  shiftLocalDate,
+  toInstant,
+  toIsoTimestamp,
+  toLocalDate,
+} from './time';
+export {
+  buildHistory,
+  currentStreak,
+  HISTORY_DAYS,
+  isDayMet,
+  isStreakOpenEnded,
+  recentDates,
+  toHistoryDay,
+} from './history';
 export {
   addEntry,
   createDay,

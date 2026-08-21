@@ -85,6 +85,30 @@ export function toLocalDate(value: unknown, label = 'A date'): LocalDate {
   )}`;
 }
 
+/**
+ * The local date `days` before or after another. A negative `days` moves
+ * backwards, which is how history walks from today into the past.
+ *
+ * The arithmetic is handed to `Date` on the day of the month, so month ends,
+ * year ends and leap days are its problem rather than this function's. It is
+ * done at local midnight rather than by adding a multiple of 24 hours because a
+ * local day is not always 24 hours long: the hour lost or gained to daylight
+ * saving would otherwise land the result on the wrong date twice a year.
+ */
+export function shiftLocalDate(date: LocalDate, days: number, label = 'A date'): LocalDate {
+  assertLocalDate(date, label);
+
+  if (!Number.isInteger(days)) {
+    throw new TypeError(
+      `A number of days to shift by must be a whole number, received ${String(days)}`,
+    );
+  }
+
+  const [year, month, dayOfMonth] = date.split('-').map(Number);
+
+  return toLocalDate(new Date(year, month - 1, dayOfMonth + days), label);
+}
+
 /** Narrows an unknown value to a real `YYYY-MM-DD` local date. */
 export function assertLocalDate(
   value: unknown,

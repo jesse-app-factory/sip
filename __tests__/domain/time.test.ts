@@ -5,6 +5,7 @@
  */
 import {
   assertLocalDate,
+  shiftLocalDate,
   toInstant,
   toIsoTimestamp,
   toLocalDate,
@@ -64,6 +65,44 @@ describe('toLocalDate', () => {
     expect(() => toLocalDate('not-a-date')).toThrow(TypeError);
     expect(() => toLocalDate('2026-02-30')).toThrow(TypeError);
     expect(() => toLocalDate(undefined)).toThrow(TypeError);
+  });
+});
+
+describe('shiftLocalDate', () => {
+  it('moves backwards and forwards by whole days', () => {
+    expect(shiftLocalDate('2026-08-18', -1)).toBe('2026-08-17');
+    expect(shiftLocalDate('2026-08-18', 1)).toBe('2026-08-19');
+    expect(shiftLocalDate('2026-08-18', 0)).toBe('2026-08-18');
+    expect(shiftLocalDate('2026-08-18', -7)).toBe('2026-08-11');
+  });
+
+  it('crosses month, year and leap-day boundaries', () => {
+    expect(shiftLocalDate('2026-03-01', -1)).toBe('2026-02-28');
+    expect(shiftLocalDate('2027-01-01', -1)).toBe('2026-12-31');
+    expect(shiftLocalDate('2028-03-01', -1)).toBe('2028-02-29');
+    expect(shiftLocalDate('2026-12-31', 1)).toBe('2027-01-01');
+  });
+
+  it('stays on the calendar rather than subtracting 24 hours', () => {
+    // Every date in a year is one day after the one before it, whatever the
+    // local clock did that night — the daylight-saving cases are in here.
+    let date = '2026-01-01';
+
+    for (let count = 0; count < 365; count += 1) {
+      const next = shiftLocalDate(date, 1);
+
+      expect(shiftLocalDate(next, -1)).toBe(date);
+      date = next;
+    }
+
+    expect(date).toBe('2027-01-01');
+  });
+
+  it('rejects a date that is not one, and a shift that is not whole days', () => {
+    expect(() => shiftLocalDate('2026-8-18', -1)).toThrow(TypeError);
+    expect(() => shiftLocalDate('2026-02-30', -1)).toThrow(TypeError);
+    expect(() => shiftLocalDate('2026-08-18', 1.5)).toThrow(TypeError);
+    expect(() => shiftLocalDate('2026-08-18', Number.NaN)).toThrow(TypeError);
   });
 });
 
