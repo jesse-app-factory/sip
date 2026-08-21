@@ -20,6 +20,7 @@ import {
   createNotificationPermissionStorage,
   NotificationPermissionStorage,
 } from './notificationPermission';
+import { createOnboardingStorage, OnboardingStorage } from './onboarding';
 import { createReminderSettingsStorage, ReminderSettingsStorage } from './reminderSettings';
 
 /** The two methods of AsyncStorage this app uses, and nothing else. */
@@ -65,4 +66,12 @@ export function createAsyncStorageNotificationPermissionStorage(): NotificationP
  */
 export function createAsyncStorageReminderSettingsStorage(): ReminderSettingsStorage {
   return createReminderSettingsStorage(createAsyncStorageKeyValueStore());
+}
+
+/**
+ * The record of first run as the running app stores it, over the same device
+ * store. It is what makes onboarding appear once rather than on every launch.
+ */
+export function createAsyncStorageOnboardingStorage(): OnboardingStorage {
+  return createOnboardingStorage(createAsyncStorageKeyValueStore());
 }

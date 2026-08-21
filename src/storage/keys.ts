@@ -36,6 +36,12 @@ export const NOTIFICATION_PERMISSION_KEY = `${KEY_PREFIX}notificationPermission`
 export const REMINDER_SETTINGS_KEY = `${KEY_PREFIX}reminderSettings`;
 
 /**
+ * The one key holding how first run ended, recorded so that onboarding appears
+ * once and never again — see docs/functional-spec.md, "First run".
+ */
+export const ONBOARDING_KEY = `${KEY_PREFIX}onboarding`;
+
+/**
  * The key a day is stored under, throwing `TypeError` for anything that is not
  * a real `YYYY-MM-DD` local date. A malformed date would otherwise create a
  * key nothing ever reads back, losing the day silently.

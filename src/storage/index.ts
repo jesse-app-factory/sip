@@ -16,6 +16,7 @@ export type { HydrationStorage } from './hydrationStorage';
 export type { KeyValueStore } from './keyValueStore';
 export type { InMemoryKeyValueStore } from './inMemory';
 export type { NotificationPermissionStorage } from './notificationPermission';
+export type { OnboardingOutcome, OnboardingState, OnboardingStorage } from './onboarding';
 export type { ReminderSettingsStorage } from './reminderSettings';
 
 export { createHydrationStorage } from './hydrationStorage';
@@ -25,6 +26,7 @@ export {
   createAsyncStorageHydrationStorage,
   createAsyncStorageKeyValueStore,
   createAsyncStorageNotificationPermissionStorage,
+  createAsyncStorageOnboardingStorage,
   createAsyncStorageReminderSettingsStorage,
 } from './asyncStorage';
 export {
@@ -32,6 +34,14 @@ export {
   decodeNotificationPermission,
   encodeNotificationPermission,
 } from './notificationPermission';
+export {
+  createOnboardingStorage,
+  decodeOnboarding,
+  DEFAULT_ONBOARDING_STATE,
+  encodeOnboarding,
+  isOnboardingOutcome,
+  ONBOARDING_OUTCOMES,
+} from './onboarding';
 export {
   createReminderSettingsStorage,
   decodeReminderSettings,
@@ -43,6 +53,7 @@ export {
   GOAL_KEY,
   KEY_PREFIX,
   NOTIFICATION_PERMISSION_KEY,
+  ONBOARDING_KEY,
   REMINDER_SETTINGS_KEY,
 } from './keys';
 export { decodeDay, decodeGoal, encodeDay, encodeGoal } from './records';
