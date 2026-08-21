@@ -7,6 +7,7 @@
  * directly, which is what lets every screen be rendered in a test.
  */
 export type { GoalScreenProps, ParsedGoal } from './GoalScreen';
+export type { SettingsScreenProps } from './SettingsScreen';
 export type { TodayScreenProps } from './TodayScreen';
 
 export {
@@ -19,6 +20,26 @@ export {
   parseGoalInput,
   SAVED_MESSAGE,
 } from './GoalScreen';
+export {
+  EMPTY_WINDOW_MESSAGE,
+  formatDuration,
+  INTERVAL_OPTIONS_MS,
+  intervalOptionLabel,
+  intervalSummary,
+  INVALID_TIME_MESSAGE,
+  QUIET_HOURS_END_LABEL,
+  QUIET_HOURS_LABEL,
+  QUIET_HOURS_START_LABEL,
+  quietHoursSummary,
+  REMINDERS_LABEL,
+  REMINDERS_OFF_MESSAGE,
+  SAVE_QUIET_HOURS_LABEL,
+  SETTINGS_LOADING_MESSAGE,
+  SETTINGS_SAVED_MESSAGE,
+  SETTINGS_WRITE_FAILED_MESSAGE,
+  SettingsScreen,
+  switchLabel,
+} from './SettingsScreen';
 export {
   BLOB_MOOD,
   DATE_CHECK_INTERVAL_MS,

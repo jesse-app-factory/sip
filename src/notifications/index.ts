@@ -14,6 +14,8 @@
  * phone.
  */
 export type { NotificationPermission } from './permission';
+export type { QuietHours, TimeOfDay } from './quietHours';
+export type { ReminderSettings } from './settings';
 export type { Reminder } from './reminder';
 export type { ReminderId, ReminderScheduler } from './reminderScheduler';
 export type {
@@ -29,11 +31,30 @@ export {
   NOTIFICATION_PERMISSIONS,
 } from './permission';
 export {
+  assertQuietHours,
+  assertTimeOfDay,
+  createQuietHours,
+  crossesMidnight,
+  describeQuietHours,
+  isEmptyWindow,
+  isQuietHours,
+  isTimeOfDay,
+  isWithinQuietHours,
+  minutesIntoDay,
+  outsideQuietHours,
+} from './quietHours';
+export {
   assertIntervalMs,
+  assertReminderSettings,
+  createReminderSettings,
+  defaultReminderSettings,
+  REMINDER_INTERVAL_MS,
+  SUGGESTED_QUIET_HOURS,
+} from './settings';
+export {
   nextReminderAt,
   planReminder,
   REMINDER_BODY,
-  REMINDER_INTERVAL_MS,
   REMINDER_TITLE,
 } from './reminder';
 export { createExpoReminderScheduler } from './expoScheduler';

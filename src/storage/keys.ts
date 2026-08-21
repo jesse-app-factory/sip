@@ -29,6 +29,13 @@ export const DAY_KEY_PREFIX = `${KEY_PREFIX}day:`;
 export const NOTIFICATION_PERMISSION_KEY = `${KEY_PREFIX}notificationPermission`;
 
 /**
+ * The one key holding the reminder settings: the interval, the quiet-hours
+ * window and whether reminders are on at all. Its own key, like everything
+ * else, so writing a setting rewrites neither the goal nor any day.
+ */
+export const REMINDER_SETTINGS_KEY = `${KEY_PREFIX}reminderSettings`;
+
+/**
  * The key a day is stored under, throwing `TypeError` for anything that is not
  * a real `YYYY-MM-DD` local date. A malformed date would otherwise create a
  * key nothing ever reads back, losing the day silently.

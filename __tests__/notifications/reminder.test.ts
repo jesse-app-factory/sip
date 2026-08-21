@@ -11,14 +11,19 @@
  * `expo-notifications`. CI has no device, and no test here needs one.
  */
 import { addEntry, createDay, createEntry, createGoal, Day } from '../../src/domain';
+import { createQuietHours, isWithinQuietHours } from '../../src/notifications/quietHours';
 import {
-  assertIntervalMs,
   nextReminderAt,
   planReminder,
   REMINDER_BODY,
-  REMINDER_INTERVAL_MS,
   REMINDER_TITLE,
 } from '../../src/notifications/reminder';
+import {
+  assertIntervalMs,
+  createReminderSettings,
+  ReminderSettings,
+  REMINDER_INTERVAL_MS,
+} from '../../src/notifications/settings';
 
 /** A fixed moment, so which day is "today" never depends on when this runs. */
 const NOW = new Date('2026-08-18T10:00:00.000Z');
@@ -37,6 +42,10 @@ function dayWith(...offsetsMs: number[]): Day {
   );
 }
 
+/** Settings as stored, with whichever of them this test is about changed. */
+const settings = (changes: Partial<ReminderSettings> = {}): ReminderSettings =>
+  createReminderSettings(changes);
+
 describe('the reminder interval', () => {
   it('is two hours', () => {
     expect(REMINDER_INTERVAL_MS).toBe(2 * 60 * 60 * 1000);
@@ -46,7 +55,9 @@ describe('the reminder interval', () => {
     'refuses %p as an interval',
     (interval) => {
       expect(() => assertIntervalMs(interval)).toThrow(TypeError);
-      expect(() => nextReminderAt(dayWith(), NOW, interval)).toThrow(TypeError);
+      expect(() =>
+        nextReminderAt(dayWith(), NOW, { enabled: true, intervalMs: interval, quietHours: null }),
+      ).toThrow(TypeError);
     },
   );
 
@@ -85,7 +96,9 @@ describe('when the next reminder is due', () => {
   it('uses the interval it is given', () => {
     const day = dayWith(-minutes(10));
 
-    expect(nextReminderAt(day, NOW, minutes(45))).toBe(iso(minutes(35)));
+    expect(nextReminderAt(day, NOW, settings({ intervalMs: minutes(45) }))).toBe(
+      iso(minutes(35)),
+    );
   });
 
   it('accepts the moment as a Date or an ISO string, to the same answer', () => {
@@ -116,6 +129,105 @@ describe('once the goal is met', () => {
     const undone = { ...met, entries: met.entries.slice(0, -1) };
 
     expect(planReminder(undone, NOW)).not.toBeNull();
+  });
+});
+
+describe('quiet hours', () => {
+  /**
+   * Quiet hours are local — 22:00 means ten at night where the user is
+   * standing, per docs/technical-spec.md, "Time" — so every moment here is
+   * built from local parts rather than from a UTC string. The assertions then
+   * hold in any time zone the suite happens to run in.
+   */
+  const local = (year: number, month: number, day: number, hour: number, minute = 0): Date =>
+    new Date(year, month - 1, day, hour, minute, 0, 0);
+
+  /** A day with one glass logged at that local moment. */
+  const dayLoggedAt = (moment: Date): Day =>
+    addEntry(createDay(moment, GOAL), createEntry(200, moment));
+
+  const NIGHT = createQuietHours('22:00', '07:00');
+
+  it('moves a reminder due in the small hours to the end of the window', () => {
+    // A glass at one in the morning, so the next reminder would be due at
+    // three — which is precisely the reminder that gets an app deleted.
+    const oneAm = local(2026, 8, 18, 1);
+
+    expect(
+      nextReminderAt(dayLoggedAt(oneAm), oneAm, settings({ quietHours: NIGHT })),
+    ).toBe(local(2026, 8, 18, 7).toISOString());
+  });
+
+  it('treats a window crossing midnight as one night rather than an empty range', () => {
+    // Half past ten at night, so the reminder would be due at half past
+    // midnight: inside a window whose start is after its end.
+    const evening = local(2026, 8, 18, 22, 30);
+
+    expect(
+      nextReminderAt(dayLoggedAt(evening), evening, settings({ quietHours: NIGHT })),
+    ).toBe(local(2026, 8, 19, 7).toISOString());
+  });
+
+  it('moves a reminder due at the very start of the window', () => {
+    const eightPm = local(2026, 8, 18, 20);
+
+    expect(
+      nextReminderAt(dayLoggedAt(eightPm), eightPm, settings({ quietHours: NIGHT })),
+    ).toBe(local(2026, 8, 19, 7).toISOString());
+  });
+
+  it('leaves a reminder due outside the window where it was', () => {
+    // Six in the morning is inside the window, but the reminder it leads to is
+    // due at eight, which is not.
+    const sixAm = local(2026, 8, 18, 6);
+
+    expect(nextReminderAt(dayLoggedAt(sixAm), sixAm, settings({ quietHours: NIGHT }))).toBe(
+      local(2026, 8, 18, 8).toISOString(),
+    );
+  });
+
+  it('handles a window that does not cross midnight too', () => {
+    const lunchtime = local(2026, 8, 18, 12, 30);
+    const window = createQuietHours('13:00', '14:00');
+
+    expect(
+      nextReminderAt(dayLoggedAt(lunchtime), lunchtime, {
+        enabled: true,
+        intervalMs: minutes(60),
+        quietHours: window,
+      }),
+    ).toBe(local(2026, 8, 18, 14).toISOString());
+  });
+
+  it('schedules nothing at all inside the window it was given', () => {
+    // Every ten minutes through a whole night, nothing lands in the window.
+    const window = createQuietHours('22:00', '07:00');
+
+    for (let step = 0; step < 6 * 24; step += 1) {
+      const moment = new Date(local(2026, 8, 18, 0).getTime() + step * minutes(10));
+      const due = nextReminderAt(dayLoggedAt(moment), moment, settings({ quietHours: window }));
+
+      expect(due).not.toBeNull();
+      expect(isWithinQuietHours(window, new Date(due as string))).toBe(false);
+    }
+  });
+
+  it('is not applied when the user has configured none', () => {
+    const oneAm = local(2026, 8, 18, 1);
+
+    expect(nextReminderAt(dayLoggedAt(oneAm), oneAm, settings())).toBe(
+      local(2026, 8, 18, 3).toISOString(),
+    );
+  });
+});
+
+describe('with reminders switched off', () => {
+  it('there is no next reminder, whatever the day looks like', () => {
+    const off = settings({ enabled: false });
+
+    expect(nextReminderAt(dayWith(), NOW, off)).toBeNull();
+    expect(nextReminderAt(dayWith(-minutes(30)), NOW, off)).toBeNull();
+    expect(planReminder(dayWith(-minutes(30)), NOW, off)).toBeNull();
   });
 });
 

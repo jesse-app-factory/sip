@@ -16,13 +16,14 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import { createDay, createEntry, createGoal, toLocalDate } from '../../src/domain';
 import { createFakeReminderScheduler } from '../../src/notifications/fakeScheduler';
 import { NotificationPermission } from '../../src/notifications/permission';
-import { REMINDER_INTERVAL_MS } from '../../src/notifications/reminder';
 import { createReminderService } from '../../src/notifications/reminderService';
+import { REMINDER_INTERVAL_MS } from '../../src/notifications/settings';
 import { glassButtonLabel, statLabel, TodayScreen, TOTAL_LABEL } from '../../src/screens';
 import {
   createInMemoryHydrationStorage,
   createInMemoryKeyValueStore,
   createNotificationPermissionStorage,
+  createReminderSettingsStorage,
   HydrationStorage,
   InMemoryKeyValueStore,
 } from '../../src/storage';
@@ -50,12 +51,14 @@ function build({
 }: AppOptions = {}) {
   const scheduler = createFakeReminderScheduler({ permission, whenPrompted });
   const permissions = createNotificationPermissionStorage(store);
+  const settings = createReminderSettingsStorage(store);
 
   return {
     store,
     scheduler,
+    settings,
     storage: createInMemoryHydrationStorage(store),
-    reminders: createReminderService({ scheduler, permissions }),
+    reminders: createReminderService({ scheduler, permissions, settings }),
     recorded: () => permissions.readNotificationPermission(),
   };
 }

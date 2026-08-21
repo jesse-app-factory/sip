@@ -12,6 +12,14 @@
  * `ReminderScheduler`'s; whether the app may schedule at all is the recorded
  * permission's. This is only the ordering between them.
  *
+ * ## Settings are read, never remembered
+ *
+ * The interval, the quiet-hours window and the off switch are read from
+ * storage on every sync. Nothing therefore has to tell the service that a
+ * setting changed: the settings screen stores the new value and syncs, and
+ * because `sync` cancels before it reads, an interval that moved reschedules
+ * the pending reminder and an off switch leaves nothing pending at all.
+ *
  * ## Permission is asked at most once
  *
  * docs/functional-spec.md, "Reminders": a denial is recorded "so the user is
@@ -38,18 +46,19 @@
  */
 import { Day } from '../domain';
 import type { NotificationPermissionStorage } from '../storage/notificationPermission';
-import { assertIntervalMs, planReminder, Reminder, REMINDER_INTERVAL_MS } from './reminder';
+import type { ReminderSettingsStorage } from '../storage/reminderSettings';
+import { planReminder, Reminder } from './reminder';
 import { ReminderId, ReminderScheduler } from './reminderScheduler';
 
 export interface ReminderService {
   /**
    * Brings the pending reminder into line with this day as of `now`: cancels
-   * whatever was pending, and schedules the next one unless the goal has been
-   * met or permission is not granted.
+   * whatever was pending, and schedules the next one unless the settings, the
+   * day or the permission say there is none.
    *
    * Resolves with the reminder that was scheduled, or `null` when none was —
-   * goal met, permission refused, or the platform refused the call. It never
-   * rejects.
+   * reminders switched off, goal met, permission refused, or the platform
+   * refused the call. It never rejects.
    */
   sync(day: Day, now: Date | string): Promise<Reminder | null>;
 
@@ -68,19 +77,19 @@ export interface ReminderServiceOptions {
   readonly permissions: NotificationPermissionStorage;
 
   /**
-   * How long after the most recent glass a reminder is due. Fixed for now;
-   * TASK-009 is where this becomes a setting the user controls.
+   * Where the interval, the quiet hours and the off switch are stored. Read on
+   * every sync rather than held, so a setting changed on the settings screen
+   * governs the very next reminder without anything having to be told about
+   * it.
    */
-  readonly intervalMs?: number;
+  readonly settings: ReminderSettingsStorage;
 }
 
 export function createReminderService({
   scheduler,
   permissions,
-  intervalMs = REMINDER_INTERVAL_MS,
+  settings,
 }: ReminderServiceOptions): ReminderService {
-  assertIntervalMs(intervalMs);
-
   let pendingId: ReminderId | null = null;
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -141,10 +150,14 @@ export function createReminderService({
         // even if this sync goes on to schedule nothing.
         await cancel();
 
-        const next = planReminder(day, now, intervalMs);
+        // Read rather than remembered, so switching reminders off cancels what
+        // was pending on the very next sync, and a new interval or window is
+        // in force from the moment it is stored.
+        const next = planReminder(day, now, await settings.readReminderSettings());
         if (next === null) {
-          // The goal is met: nothing further is scheduled today, per
-          // docs/functional-spec.md, "Reminders".
+          // Reminders are off, or the goal is met and nothing further is
+          // scheduled today, per docs/functional-spec.md, "Reminders". Either
+          // way the cancel above has already left nothing pending.
           return null;
         }
 

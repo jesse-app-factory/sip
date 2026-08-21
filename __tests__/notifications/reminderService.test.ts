@@ -15,13 +15,22 @@
 import { addEntry, createDay, createEntry, createGoal, Day, undoLastEntry } from '../../src/domain';
 import { createFakeReminderScheduler } from '../../src/notifications/fakeScheduler';
 import { NotificationPermission } from '../../src/notifications/permission';
-import { REMINDER_BODY, REMINDER_INTERVAL_MS, REMINDER_TITLE } from '../../src/notifications/reminder';
+import { createQuietHours } from '../../src/notifications/quietHours';
+import { REMINDER_BODY, REMINDER_TITLE } from '../../src/notifications/reminder';
 import { ReminderScheduler } from '../../src/notifications/reminderScheduler';
 import { createReminderService } from '../../src/notifications/reminderService';
 import {
+  createReminderSettings,
+  ReminderSettings,
+  REMINDER_INTERVAL_MS,
+} from '../../src/notifications/settings';
+import {
   createInMemoryKeyValueStore,
   createNotificationPermissionStorage,
+  createReminderSettingsStorage,
+  encodeReminderSettings,
   InMemoryKeyValueStore,
+  REMINDER_SETTINGS_KEY,
 } from '../../src/storage';
 
 /** A fixed moment, so which day is "today" never depends on when this runs. */
@@ -46,12 +55,14 @@ interface Built {
   readonly scheduler: ReturnType<typeof createFakeReminderScheduler>;
   readonly service: ReturnType<typeof createReminderService>;
   readonly recorded: () => Promise<NotificationPermission>;
+  readonly settings: ReturnType<typeof createReminderSettingsStorage>;
 }
 
 interface BuildOptions {
   readonly permission?: NotificationPermission;
   readonly whenPrompted?: NotificationPermission;
-  readonly intervalMs?: number;
+  /** Whatever the user has changed about reminders, as if already stored. */
+  readonly settings?: Partial<ReminderSettings>;
   /** An existing store, to model the app being closed and opened again. */
   readonly store?: InMemoryKeyValueStore;
   /** A stand-in for the fake, for the platform refusing to co-operate. */
@@ -61,18 +72,31 @@ interface BuildOptions {
 function build({
   permission = 'granted',
   whenPrompted = 'granted',
-  intervalMs,
+  settings,
   store = createInMemoryKeyValueStore(),
   scheduler,
 }: BuildOptions = {}): Built {
   const fake = createFakeReminderScheduler({ permission, whenPrompted });
   const permissions = createNotificationPermissionStorage(store);
+  const settingsStorage = createReminderSettingsStorage(store);
+
+  if (settings !== undefined) {
+    // Seeded rather than written, so the settings are already in the store
+    // before the first sync reads them — the app opening over what a previous
+    // run stored.
+    store.seed(REMINDER_SETTINGS_KEY, encodeReminderSettings(createReminderSettings(settings)));
+  }
 
   return {
     store,
     scheduler: fake,
-    service: createReminderService({ scheduler: scheduler ?? fake, permissions, intervalMs }),
+    service: createReminderService({
+      scheduler: scheduler ?? fake,
+      permissions,
+      settings: settingsStorage,
+    }),
     recorded: () => permissions.readNotificationPermission(),
+    settings: settingsStorage,
   };
 }
 
@@ -114,17 +138,159 @@ describe('scheduling the next reminder', () => {
     expect(scheduler.pending()[0].body).toMatch(/water/i);
   });
 
-  it('uses the interval it was built with', async () => {
-    const { scheduler, service } = build({ intervalMs: minutes(45) });
+  it('uses the interval the user stored', async () => {
+    const { scheduler, service } = build({ settings: { intervalMs: minutes(45) } });
 
     await service.sync(dayWith(-minutes(15)), NOW);
 
     expect(scheduler.pending()[0].fireAt).toBe(iso(minutes(30)));
   });
 
-  it('refuses to be built with an interval that could never fire', () => {
-    expect(() => build({ intervalMs: 0 })).toThrow(TypeError);
-    expect(() => build({ intervalMs: -minutes(5) })).toThrow(TypeError);
+  it('refuses to store an interval that could never fire', async () => {
+    const { settings } = build();
+
+    await expect(
+      settings.writeReminderSettings({ enabled: true, intervalMs: 0, quietHours: null }),
+    ).rejects.toThrow(TypeError);
+    await expect(
+      settings.writeReminderSettings({
+        enabled: true,
+        intervalMs: -minutes(5),
+        quietHours: null,
+      }),
+    ).rejects.toThrow(TypeError);
+  });
+
+  it('falls back to the default interval when the stored settings are unreadable', async () => {
+    const store = createInMemoryKeyValueStore();
+    store.seed(REMINDER_SETTINGS_KEY, '{"intervalMs":');
+    const { scheduler, service } = build({ store });
+
+    await service.sync(dayWith(), NOW);
+
+    expect(scheduler.pending()[0].fireAt).toBe(iso(REMINDER_INTERVAL_MS));
+  });
+});
+
+describe('changing the interval', () => {
+  it('reschedules the pending reminder against the new one', async () => {
+    const { scheduler, service, settings } = build();
+    await service.sync(dayWith(-minutes(15)), NOW);
+    const [first] = scheduler.all();
+    expect(first.fireAt).toBe(iso(REMINDER_INTERVAL_MS - minutes(15)));
+
+    await settings.writeReminderSettings(createReminderSettings({ intervalMs: minutes(45) }));
+    await service.sync(dayWith(-minutes(15)), NOW);
+
+    expect(scheduler.cancelled()).toEqual([first.id]);
+    expect(scheduler.pending()).toHaveLength(1);
+    expect(scheduler.pending()[0].fireAt).toBe(iso(minutes(30)));
+  });
+
+  it('is in force for a service built afresh over the same store', async () => {
+    const store = createInMemoryKeyValueStore();
+    const first = build({ store });
+    await first.settings.writeReminderSettings(
+      createReminderSettings({ intervalMs: minutes(90) }),
+    );
+
+    // The app closes and opens again over what it stored.
+    const relaunched = build({ store });
+    await relaunched.service.sync(dayWith(), NOW);
+
+    expect(relaunched.scheduler.pending()[0].fireAt).toBe(iso(minutes(90)));
+  });
+});
+
+describe('quiet hours', () => {
+  /** Local moments, because quiet hours are local. See the reminder tests. */
+  const local = (year: number, month: number, day: number, hour: number, minute = 0): Date =>
+    new Date(year, month - 1, day, hour, minute, 0, 0);
+
+  const nightly = { quietHours: createQuietHours('22:00', '07:00') };
+
+  it('schedules nothing inside the window, moving the reminder to its end', async () => {
+    const oneAm = local(2026, 8, 18, 1);
+    const { scheduler, service } = build({ settings: nightly });
+
+    await service.sync(createDay(oneAm, GOAL), oneAm);
+
+    expect(scheduler.pending()[0].fireAt).toBe(local(2026, 8, 18, 7).toISOString());
+  });
+
+  it('treats a window crossing midnight as one night', async () => {
+    const evening = local(2026, 8, 18, 22, 30);
+    const { scheduler, service } = build({ settings: nightly });
+
+    await service.sync(createDay(evening, GOAL), evening);
+
+    // Half past midnight is inside the window, so the reminder waits for
+    // morning rather than being scheduled as if the window were empty.
+    expect(scheduler.pending()[0].fireAt).toBe(local(2026, 8, 19, 7).toISOString());
+  });
+
+  it('stops moving reminders once the window is cleared', async () => {
+    const oneAm = local(2026, 8, 18, 1);
+    const { scheduler, service, settings } = build({ settings: nightly });
+    await service.sync(createDay(oneAm, GOAL), oneAm);
+
+    await settings.writeReminderSettings(createReminderSettings({ quietHours: null }));
+    await service.sync(createDay(oneAm, GOAL), oneAm);
+
+    expect(scheduler.pending()).toHaveLength(1);
+    expect(scheduler.pending()[0].fireAt).toBe(local(2026, 8, 18, 3).toISOString());
+  });
+});
+
+describe('switching reminders off', () => {
+  it('cancels what was pending and schedules nothing further', async () => {
+    const { scheduler, service, settings } = build();
+    await service.sync(dayWith(-minutes(30)), NOW);
+    const [pending] = scheduler.all();
+
+    await settings.writeReminderSettings(createReminderSettings({ enabled: false }));
+
+    await expect(service.sync(dayWith(-minutes(30)), NOW)).resolves.toBeNull();
+    expect(scheduler.cancelled()).toEqual([pending.id]);
+    expect(scheduler.pending()).toEqual([]);
+    expect(scheduler.all()).toHaveLength(1);
+  });
+
+  it('schedules nothing on any later sync, and asks for no permission', async () => {
+    const { scheduler, service } = build({
+      permission: 'undetermined',
+      settings: { enabled: false },
+    });
+
+    await service.sync(dayWith(), NOW);
+    await service.sync(dayWith(-minutes(10)), at(minutes(10)));
+
+    expect(scheduler.all()).toEqual([]);
+    // Nothing is being scheduled, so there is nothing to ask permission for.
+    expect(scheduler.prompts()).toBe(0);
+  });
+
+  it('schedules again once they are switched back on', async () => {
+    const { scheduler, service, settings } = build({ settings: { enabled: false } });
+    await service.sync(dayWith(), NOW);
+
+    await settings.writeReminderSettings(createReminderSettings({ enabled: true }));
+    await service.sync(dayWith(), NOW);
+
+    expect(scheduler.pending()).toHaveLength(1);
+    expect(scheduler.pending()[0].fireAt).toBe(iso(REMINDER_INTERVAL_MS));
+  });
+
+  it('stays off when the app is opened afresh', async () => {
+    const store = createInMemoryKeyValueStore();
+    const first = build({ store });
+    await first.settings.writeReminderSettings(createReminderSettings({ enabled: false }));
+
+    const relaunched = build({ store });
+    await relaunched.service.sync(dayWith(), NOW);
+
+    expect(relaunched.scheduler.all()).toEqual([]);
+    expect((await relaunched.settings.readReminderSettings()).enabled).toBe(false);
   });
 });
 
@@ -335,6 +501,21 @@ describe('when the platform refuses to co-operate', () => {
     expect(scheduled).toHaveLength(2);
   });
 
+  it('answers null rather than throwing when the settings cannot be read', async () => {
+    const scheduler = createFakeReminderScheduler({ permission: 'granted' });
+    const service = createReminderService({
+      scheduler,
+      permissions: createNotificationPermissionStorage(createInMemoryKeyValueStore()),
+      settings: {
+        readReminderSettings: () => Promise.reject(new Error('storage is unavailable')),
+        writeReminderSettings: () => Promise.resolve(),
+      },
+    });
+
+    await expect(service.sync(dayWith(), NOW)).resolves.toBeNull();
+    expect(scheduler.all()).toEqual([]);
+  });
+
   it('answers null rather than throwing when the record cannot be read', async () => {
     const scheduler = createFakeReminderScheduler({ permission: 'granted' });
     const service = createReminderService({
@@ -343,6 +524,7 @@ describe('when the platform refuses to co-operate', () => {
         readNotificationPermission: () => Promise.reject(new Error('storage is unavailable')),
         writeNotificationPermission: () => Promise.resolve(),
       },
+      settings: createReminderSettingsStorage(createInMemoryKeyValueStore()),
     });
 
     await expect(service.sync(dayWith(), NOW)).resolves.toBeNull();
