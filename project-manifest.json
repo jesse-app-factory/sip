@@ -4,7 +4,7 @@
   "projectName": "Sip",
   "projectSlug": "sip",
   "defaultBranch": "main",
-  "packageChecksum": "8b2d70b846840b78042c95762ba8bb0eba74d37e1b321d17d19b42ffae5fdbab",
+  "packageChecksum": "2a8272f1daf5549d54d3dac09bb54c21c7592babb4f72bf3a66c2288fcf2ad0f",
   "commands": {
     "lint": {
       "enabled": true,

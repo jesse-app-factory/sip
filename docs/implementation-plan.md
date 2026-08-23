@@ -1,6 +1,6 @@
 # Sip — Implementation Plan
 
-Fourteen tasks. The order below is the dependency order, and it is chosen so that
+Fifteen tasks. The order below is the dependency order, and it is chosen so that
 each task is verifiable when it lands rather than only once something later
 arrives.
 
@@ -27,6 +27,28 @@ that were already correct.
 | TASK-010 | History and streak                  | 003           |
 | TASK-011 | First-run onboarding                | 004, 009      |
 | TASK-012 | README                              | 007, 010, 011 |
+
+### The task that was missing
+
+TASK-015 assembles the screens into the app, and it was not in the original
+plan. That omission is the most useful thing this project has produced.
+
+Fourteen tasks each built a piece — a screen, the domain model, the storage
+layer, the reminder service — and every one of them passed its own acceptance
+criteria and its own independent review. None of them was wrong. But nothing
+mounted the screens, no navigation library was installed, and no
+`ReminderService` was ever constructed in the running app, so the shipped
+product let a user set a goal and do nothing else.
+
+The acceptance judge rejected it: eighteen criteria met, seventeen not, and
+every unmet one downstream of the same gap. It is the only gate that reads
+`docs/acceptance-criteria.md` and asks whether the assembled product does what
+was asked, rather than whether one task did what it was told — which is exactly
+why it caught what fourteen reviews structurally could not.
+
+The lesson for the next package: **a plan made of parts needs a task that
+makes the whole.** Decomposition is not free, and the seam between the pieces
+belongs to someone.
 
 ### Why the setup is three tasks
 

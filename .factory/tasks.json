@@ -383,5 +383,37 @@
       "package-lock.json"
     ],
     "estimatedComplexity": "small"
+  },
+  {
+    "id": "TASK-015",
+    "title": "Assemble the screens into the actual app",
+    "description": "Every screen exists, is tested and is reachable by no one. App.tsx mounts only the goal screen behind the first-run gate, so on a phone the user can set a goal and do nothing else — they cannot log a glass, see the blob, read their history or reach the reminder settings, and no ReminderService is ever constructed so no reminder is ever scheduled. This task installs a navigation library, mounts TodayScreen, HistoryScreen and SettingsScreen, and starts the reminder service, turning a set of parts into the product docs/acceptance-criteria.md describes. It exists because the original plan had fourteen tasks that each built a piece and none that assembled them; the acceptance judge rejected the project for exactly that, with seventeen criteria unmet and every one of them downstream of this.",
+    "priority": "P0",
+    "dependencies": ["TASK-012"],
+    "acceptanceCriteria": [
+      "A navigation library is installed, and the app mounts TodayScreen, HistoryScreen and SettingsScreen so each is reachable from the running app",
+      "TodayScreen is what the user sees after onboarding: logging a glass, undo, today's total against the goal, and the blob are all reachable without editing code",
+      "The goal screen remains reachable so the goal can still be changed after onboarding",
+      "A ReminderService is constructed when the app starts and is given the real scheduler, so logging a glass actually schedules and cancels reminders on a device",
+      "Reminder settings changed on SettingsScreen reach that same service rather than a second instance, so switching reminders off cancels what is pending",
+      "First-run onboarding still appears once and only once, and skipping it still leaves a usable app",
+      "A test renders the app and asserts each of the three screens can be reached, so a screen that exists but is unmounted fails here rather than in an acceptance review",
+      "A test asserts the reminder service is constructed at app start with the non-fake scheduler",
+      "`README.md` no longer describes screens as unwired, and its 'what is wired into the app today' section matches what the app now does",
+      "`npm test`, `npm run lint`, `npm run typecheck` and `npm run build` each exit 0"
+    ],
+    "allowedPaths": [
+      "package.json",
+      "package-lock.json",
+      "App.tsx",
+      "index.ts",
+      "app.json",
+      "babel.config.js",
+      "src/**",
+      "__tests__/**",
+      "README.md"
+    ],
+    "forbiddenPaths": [".github/workflows/**", "scripts/**", "project-manifest.json"],
+    "estimatedComplexity": "medium"
   }
 ]
