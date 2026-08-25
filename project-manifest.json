@@ -52,5 +52,12 @@
     "notifications": {
       "enabled": true
     }
+  },
+  "completion": {
+    "status": "completed",
+    "version": "v1.0.0",
+    "finalCommitSha": "3cc173c8fb52e21614ac5d6829b2e1c35febd691",
+    "completedTasks": 15,
+    "completedAt": "2026-08-25T08:36:16.538Z"
   }
 }
