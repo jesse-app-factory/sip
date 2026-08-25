@@ -56,7 +56,7 @@ runs exactly these on every change:
 | ------------------ | ----------------------------------------------------------------------- |
 | `npm run lint`     | ESLint over the repository, with the Expo config.                       |
 | `npm run typecheck`| `tsc --noEmit` against `strict: true` TypeScript.                       |
-| `npm test`         | The Jest suite: domain, storage, notifications, components and screens. |
+| `npm test`         | The Jest suite: domain, storage, notifications, components, screens and navigation. |
 | `npm run build`    | `expo export`, producing a JavaScript bundle in `dist/`.                |
 
 `npm run build` is a packaging check rather than a release step. It proves the
@@ -155,43 +155,76 @@ the first one's animation is still running.
 
 ## How the app is used
 
-- **Set a goal.** A whole number of millilitres, greater than zero. It can be
-  changed at any time, including part-way through a day, and changing it never
-  changes anything already logged.
-- **Log a glass.** One tap on a glass size — 200, 250, 330 or 500 ml. The entry
-  is written to storage before the tap is considered finished, so anything on
-  screen has already been saved. *Undo last glass* removes the most recent entry
-  only.
+The four screens are tabs along the bottom, so any of them is one tap from any
+other and none of them is reached "through" another.
+
+- **Set a goal.** On the *Goal* tab: a whole number of millilitres, greater than
+  zero. It can be changed at any time, including part-way through a day, and
+  changing it never changes anything already logged.
+- **Log a glass.** On the *Today* tab: one tap on a glass size — 200, 250, 330 or
+  500 ml. The entry is written to storage before the tap is considered finished,
+  so anything on screen has already been saved. *Undo last glass* removes the
+  most recent entry only.
 - **The day.** A day runs from local midnight to local midnight. At midnight the
   new day starts at zero and the previous day keeps its entries and the goal that
   applied to it. The app rechecks the date every 30 seconds while it is open, so
   a glass logged just after midnight belongs to the new day.
-- **History.** The last seven days, each with its total and the goal that applied
-  on that day, plus the current streak: consecutive days on which the goal was
-  met, ending today or yesterday. A day with no data counts as not met and breaks
-  the streak, and today counts only once its goal has actually been met.
+- **History.** On the *History* tab: the last seven days, each with its total and
+  the goal that applied on that day, plus the current streak: consecutive days on
+  which the goal was met, ending today or yesterday. A day with no data counts as
+  not met and breaks the streak, and today counts only once its goal has actually
+  been met.
+- **Reminders.** On the *Settings* tab: the interval, the quiet-hours window and
+  the switch that turns reminders off altogether — all of which behave as
+  described under [How reminders behave](#how-reminders-behave) above.
 
 ## What is wired into the app today
 
-Worth knowing before you open it on a phone: `App.tsx` currently mounts first-run
-onboarding and then the **goal screen** only. The today, history and settings
-screens are built and covered by tests, but nothing yet renders them, so the
-running app is onboarding plus goal-setting rather than the whole product
-described above. No task in `docs/implementation-plan.md` wires them together;
-this README describes what the code does, and this section says which parts of it
-a phone can currently reach.
+The whole of it. `App.tsx` builds the device storage, the device notification
+scheduler and the one reminder service, and hands them to first-run onboarding
+and then to the app itself.
+
+**The first launch** opens on onboarding, which sets an initial goal and asks
+about notification permission. Completing it or skipping it both mean it never
+appears again; skipping leaves the default goal of 2000 ml and reminders off.
+
+**Every launch after that** opens on the **Today** tab, with four tabs along the
+bottom of the screen:
+
+| Tab          | What it is for                                                        |
+| ------------ | --------------------------------------------------------------------- |
+| **Today**    | The blob, today's total against the goal, the glass sizes, and *undo*. |
+| **History**  | The last seven days and the current streak.                           |
+| **Goal**     | Changing the daily goal, at any time.                                 |
+| **Settings** | The reminder interval, quiet hours, and the reminders switch.         |
+
+The tabs are [React Navigation](https://reactnavigation.org)'s bottom tabs. The
+two native packages they rest on — `react-native-screens` and
+`react-native-safe-area-context` — both ship inside Expo Go, so this still needs
+no native build and no custom development build.
+
+There is **one** reminder service for the whole app, built when the app starts,
+which is what makes the tabs agree with each other: logging a glass on Today
+schedules the next reminder, and switching reminders off on Settings cancels
+exactly that pending reminder rather than a different screen's idea of it.
+
+The tabs also agree about what is stored. A glass logged on Today is in the
+History tab when you next look at it, and a goal changed on the Goal tab is what
+Today judges the day against — each screen re-reads from storage rather than
+trusting what it read when it was first opened.
 
 ## Layout
 
 ```text
-App.tsx           the composition root: which storage and scheduler the app runs on
+App.tsx           the composition root: which storage, scheduler and reminder
+                  service the app runs on
 src/
   domain/         pure logic — no React, no storage, no platform imports
   storage/        the persistence interface, its device and in-memory versions
   notifications/  reminder rules, the scheduling interface and its fake
   components/     presentational components, including blob/
   screens/        the goal, today, history, settings and onboarding screens
-  navigation/     first-run wiring
+  navigation/     first-run wiring, and the tabs the four screens sit in
 __tests__/        mirrors src/
 docs/             the product brief and the functional, technical and test specs
 ```
